@@ -33,6 +33,7 @@
 // for directory operations 
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <cassert>
 
 #include "MultiChannelMemorySystem.h"
 #include "AddressMapping.h"
@@ -99,6 +100,9 @@ MultiChannelMemorySystem::MultiChannelMemorySystem(const string &deviceIniFilena
 		MemorySystem *channel = new MemorySystem(i, megsOfMemory/NUM_CHANS, (*csvOut), dramsim_log);
 		channels.push_back(channel);
 	}
+
+	mem_enc_engine = new MEESystem(this);
+
 }
 /* Initialize the ClockDomainCrosser to use the CPU speed 
 	If cpuClkFreqHz == 0, then assume a 1:1 ratio (like for TraceBasedSim)
@@ -369,10 +373,14 @@ MultiChannelMemorySystem::~MultiChannelMemorySystem()
 }
 void MultiChannelMemorySystem::update()
 {
+	
 	clockDomainCrosser.update(); 
+
+	mem_enc_engine->tick();
 }
 void MultiChannelMemorySystem::actual_update() 
 {
+
 	if (currentClockCycle == 0)
 	{
 		InitOutputFiles(traceFilename);
@@ -431,12 +439,14 @@ ostream &MultiChannelMemorySystem::getLogFile()
 }
 bool MultiChannelMemorySystem::addTransaction(const Transaction &trans)
 {
+	assert(0 && "Not Supported");
 	// copy the transaction and send the pointer to the new transaction 
 	return addTransaction(new Transaction(trans)); 
 }
 
 bool MultiChannelMemorySystem::addTransaction(Transaction *trans)
 {
+	assert(0 && "Not Supported");
 	unsigned channelNumber = findChannelNumber(trans->address); 
 	return channels[channelNumber]->addTransaction(trans); 
 }
@@ -444,7 +454,8 @@ bool MultiChannelMemorySystem::addTransaction(Transaction *trans)
 bool MultiChannelMemorySystem::addTransaction(bool isWrite, uint64_t addr)
 {
 	unsigned channelNumber = findChannelNumber(addr); 
-	return channels[channelNumber]->addTransaction(isWrite, addr); 
+	return mem_enc_engine->addTransaction(isWrite, addr, channelNumber);
+//	return channels[channelNumber]->addTransaction(isWrite, addr); 
 }
 
 /*
@@ -458,20 +469,17 @@ bool MultiChannelMemorySystem::addTransaction(bool isWrite, uint64_t addr)
 
 bool MultiChannelMemorySystem::willAcceptTransaction(uint64_t addr)
 {
-	unsigned chan, rank,bank,row,col; 
+	/*unsigned chan, rank,bank,row,col; 
 	addressMapping(addr, chan, rank, bank, row, col); 
-	return channels[chan]->WillAcceptTransaction(); 
+	return channels[chan]->WillAcceptTransaction(); */
+
+	unsigned channel = findChannelNumber(addr);
+	return mem_enc_engine->willAcceptTransaction(channel);
 }
 
 bool MultiChannelMemorySystem::willAcceptTransaction()
 {
-	for (size_t c=0; c<NUM_CHANS; c++) {
-		if (!channels[c]->WillAcceptTransaction())
-		{
-			return false; 
-		}
-	}
-	return true; 
+	return mem_enc_engine->willAcceptTransaction();
 }
 
 
@@ -492,10 +500,13 @@ void MultiChannelMemorySystem::RegisterCallbacks(
 		TransactionCompleteCB *writeDone,
 		void (*reportPower)(double bgpower, double burstpower, double refreshpower, double actprepower))
 {
-	for (size_t i=0; i<NUM_CHANS; i++)
+
+	mem_enc_engine->RegisterCallbacks(readDone, writeDone, reportPower);
+
+	/*for (size_t i=0; i<NUM_CHANS; i++)
 	{
 		channels[i]->RegisterCallbacks(readDone, writeDone, reportPower); 
-	}
+	}*/
 }
 
 /*

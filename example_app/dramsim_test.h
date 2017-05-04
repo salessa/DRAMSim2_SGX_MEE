@@ -34,11 +34,51 @@
 #include <string>
 #include <stdint.h>
 #include <DRAMSim.h>
+#include <vector>
+#include <iostream>
+
+using namespace std;
+
+using namespace DRAMSim;
+
 
 class some_object
 {
 	public: 
+        some_object(){
+            stat_new = false;
+        }
+
 		void read_complete(unsigned, uint64_t, uint64_t);
 		void write_complete(unsigned, uint64_t, uint64_t);
-		int add_one_and_run(DRAMSim::MultiChannelMemorySystem *mem, uint64_t addr);
+
+        bool stat_new;
+        unsigned stat_cycle;
+        unsigned stat_address;
+        bool stat_is_write;
+
+        MultiChannelMemorySystem *mem;
+
+        struct RequestStat
+        {
+
+            unsigned addr;
+            bool is_write;
+            
+            unsigned requested_cycle; 
+            unsigned finished_cycle;
+
+        };
+
+
+        vector<RequestStat> sim_stats;
+
+
+        void test_single(MultiChannelMemorySystem *mem);
+        void test_sequential(MultiChannelMemorySystem *mem, unsigned count, unsigned cycles);
+        void test_rand(MultiChannelMemorySystem *mem, unsigned count, unsigned  cycles);
+        void capture_stat();
+        void check_stats();
+        string dump_and_clear();
+
 };

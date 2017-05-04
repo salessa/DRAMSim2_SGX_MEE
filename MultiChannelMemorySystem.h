@@ -27,6 +27,10 @@
 *  OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 *  OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 *********************************************************************************/
+
+#ifndef MULTI_CHAN_SYS_H
+#define MULTI_CHAN_SYS_H
+
 #include "SimulatorObject.h"
 #include "Transaction.h"
 #include "SystemConfiguration.h"
@@ -34,7 +38,7 @@
 #include "IniReader.h"
 #include "ClockDomain.h"
 #include "CSVWriter.h"
-
+#include "MEESystem.h"
 
 namespace DRAMSim {
 
@@ -64,15 +68,15 @@ class MultiChannelMemorySystem : public SimulatorObject
 
 	void InitOutputFiles(string tracefilename);
 	void setCPUClockSpeed(uint64_t cpuClkFreqHz);
+	unsigned findChannelNumber(uint64_t addr);
+	vector<MemorySystem*> channels; 
 
 	//output file
 	std::ofstream visDataOut;
 	ofstream dramsim_log; 
 
 	private:
-		unsigned findChannelNumber(uint64_t addr);
 		void actual_update(); 
-		vector<MemorySystem*> channels; 
 		unsigned megsOfMemory; 
 		string deviceIniFilename;
 		string systemIniFilename;
@@ -83,7 +87,10 @@ class MultiChannelMemorySystem : public SimulatorObject
 		static void mkdirIfNotExist(string path);
 		static bool fileExists(string path); 
 		CSVWriter *csvOut; 
+		MEESystem* mem_enc_engine;
 
 
 	};
 }
+
+#endif
