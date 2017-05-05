@@ -4,6 +4,9 @@
 
 void MEESystem::tick(){
 
+
+    current_cycle++;
+
     //return to the core
     // if(!channelResponse.empty()){
     //     (*readDone)(0, channelResponse.front(), current_cycle);
@@ -35,9 +38,6 @@ void MEESystem::tick(){
     if(!channelResponse.empty()){
         channelResponse.pop();
     }
-
-    current_cycle++;
-
 }
 
 bool MEESystem::addTransaction(bool isWrite, uint64_t addr, unsigned channelNum){ 
