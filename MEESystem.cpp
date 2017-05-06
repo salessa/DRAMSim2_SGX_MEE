@@ -26,11 +26,11 @@ void MEESystem::tick(){
         bool is_write = decryptor->output_is_write();
 
         if(is_write){
-          (*writeDone)(channel, addr, current_cycle);   
+          (*writeDone)(channel, addr, current_cycle-1);   
         }
 
         else{
-          (*readDone)(channel, addr, current_cycle);   
+          (*readDone)(channel, addr, current_cycle-1);   
         }
     }
 
