@@ -192,6 +192,8 @@ void Decryptor::finish_crypto(){
     //remove entry for this request
     //@@transactions.erase(addr); 
 
+    output_write_flags.push(is_write);
+
     transactions_status.erase( transactions_status.begin() + trans_idx );
     transactions_addr.erase( transactions_addr.begin() + trans_idx );
 
@@ -681,6 +683,13 @@ uint64_t Decryptor::get_output(){
 
 }
 
+bool Decryptor::output_is_write(){
+    auto ret = output_write_flags.front();
+    output_write_flags.pop();
+    return ret;
+
+
+}
 
 bool Decryptor::exit_sim() {
 

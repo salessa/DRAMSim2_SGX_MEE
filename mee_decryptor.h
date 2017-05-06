@@ -71,7 +71,7 @@ public:
     bool is_output_ready();
     uint64_t get_output();
     bool add_input(bool, uint64_t);
-    
+    bool output_is_write();
     
     
     //inherited
@@ -100,6 +100,8 @@ private:
     int search_waiting_trans(uint64_t addr, RequestType_ type);
     //void process_ctr_response();
 
+
+
     //new requests to the MEE
     queue<uint64_t> input_queue;
     queue<bool> input_type_queue;
@@ -111,6 +113,8 @@ private:
     queue<uint64_t> aes_input_queue; 
     queue<uint64_t> output_queue; //response that is ready to be returned to cores/caches
     queue<uint64_t> response_queue;
+
+    queue<bool> output_write_flags;
 
     queue<uint64_t> cache_update_queue;
 

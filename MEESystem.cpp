@@ -20,9 +20,18 @@ void MEESystem::tick(){
 
     //check if decryptor has returned any data 
     if(decryptor->is_output_ready()){
-        uint64_t read_addr = decryptor->get_output();
-        unsigned channel = mem_sys->findChannelNumber(read_addr);
-        (*readDone)(channel, read_addr, current_cycle);   
+        uint64_t addr = decryptor->get_output();
+        unsigned channel = mem_sys->findChannelNumber(addr);
+
+        bool is_write = decryptor->output_is_write();
+
+        if(is_write){
+          (*writeDone)(channel, addr, current_cycle);   
+        }
+
+        else{
+          (*readDone)(channel, addr, current_cycle);   
+        }
     }
 
 

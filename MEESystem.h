@@ -67,8 +67,6 @@ private:
 			MEECallBack(queue<uint64_t>* readQueue_):readQueue(readQueue_) {}
 
 			void readCallback(unsigned id, uint64_t address, uint64_t clock_cycle){
-				auto current_cycle = clock_cycle;
-				MEE_DEBUG("RD callback\t0x"<<hex<<address);
 				readQueue->push(address);
 
 			}
