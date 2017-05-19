@@ -1,13 +1,12 @@
-
 #include "mee_decryptor.h"
 
 
 
 Decryptor::Decryptor(FACache *cache_, MEESystem *dram_):
   cache(cache_),dram(dram_),
-  RequestTypeStr{"BLOCK", "MAC", "VER", "L0", "L1", "L2"}, 
-  current_active_request(0),
-  active_write(false),
+  RequestTypeStr{"BLOCK", "MAC", "VER", "L0", "L1", "L2", "PATCH_BLOCK"}, 
+  active_address(0),
+  active_is_write(false),
   request_is_active(false) {
 
 
@@ -75,6 +74,12 @@ inline uint64_t Decryptor::get_L2_address(uint64_t data_addr){
 }
 
 
+inline uint64_t Decryptor::get_patch_addr(uint64_t ver_addr){
+    ver_addr = ver_addr & VIRT_ADDR_MASK; 
+    return PATCH_REGION_START; //TODO: track free list (using bit set) and return values
+}
+
+
 
 //this gives us the index of the first transaction with 
 //this physical address
@@ -97,7 +102,7 @@ int Decryptor::search_trans_by_addr(uint64_t addr){
 //right data block request. this function returns the index of the oldest 
 //transaction that is waiting for a meta data
     
-int Decryptor::search_waiting_trans(uint64_t addr, RequestType_ type){
+int Decryptor::search_waiting_trans(uint64_t addr, RequestFlag_ type){
 
     for (unsigned i = 0; i < transactions_addr.size(); ++i){
         
@@ -127,7 +132,9 @@ bool Decryptor::send_dram_req(bool is_write, uint64_t addr){
         bool ret = dram->send_dram_req(is_write, addr);
         if(ret) outstanding_dram.push_back(addr);
         return ret;
+
     }
+
     return false;
 }
 
@@ -157,9 +164,6 @@ bool Decryptor::send_cache_req(bool is_write, uint64_t addr){
 
 void Decryptor::finish_crypto(){
     
-
-
-
     if (crypto_finalize_queue.empty()) return;
     
     uint64_t addr = crypto_finalize_queue.front();
@@ -181,11 +185,22 @@ void Decryptor::finish_crypto(){
     bool is_write = transactions_status[trans_idx].test(WRITE_FLAG);
 
     if(is_write){
+
+        //on a write, all counters and MAC need to be updated.
+        //since we are enqueuing the updates (which means they will not be sent to cache
+        //for the next multiple cycles), we do not need to account for extra latency 
+        //to compute MAC etc...
+
         cache_update_queue.push( get_L0_address(addr) );
         cache_update_queue.push( get_L1_address(addr) );
         cache_update_queue.push( get_L2_address(addr) );
         cache_update_queue.push( get_MAC_address(addr) );
         cache_update_queue.push( get_VER_address(addr) );
+
+        //we need to update the patch status
+        update_patch(addr);
+
+
     }
 
 
@@ -196,14 +211,20 @@ void Decryptor::finish_crypto(){
 
     transactions_status.erase( transactions_status.begin() + trans_idx );
     transactions_addr.erase( transactions_addr.begin() + trans_idx );
+    mac_blocs_read.erase(mac_blocs_read.begin() + trans_idx);
 
 }
 
 
+void Decryptor::update_patch(uint64_t data_addr){
+
+    //TODO: integrate code from size study
+
+}
 
 //when a read request returns from memory, we use this function to figure out
 //what type of data it is
-Decryptor::RequestType Decryptor::get_block_type(uint64_t type){
+Decryptor::RequestFlag Decryptor::get_block_type(uint64_t type){
 
     if(type >= VER_REGION_START && type <= (VER_REGION_START + VER_REGION_SIZE)){
         return VER;
@@ -225,7 +246,82 @@ Decryptor::RequestType Decryptor::get_block_type(uint64_t type){
         return L2;
     }
 
+    if(type >= PATCH_REGION_START && type <= (PATCH_REGION_START + PATCH_REGION_SIZE)){
+        return PATCH_BLOCK;
+    }
+
+
+
     return BLOCK;
+
+
+}
+
+
+bool Decryptor::send_data_req(bool is_write, uint64_t addr){
+    
+#ifndef TETRIS
+    return send_dram_req(is_write, addr);
+
+#else 
+    //TODO: send request to a direct mapped cache
+    return send_dram_req(is_write, addr);    
+
+#endif
+
+    //for tetris case -> send request to buffer
+
+}
+
+
+void Decryptor::request_extra_blocks(){
+
+
+    //this is the first block in the super block
+    uint64_t base_addr = active_address & MAC_SUPER_BLOCK_MASK;
+
+    uint64_t addr;
+
+
+    //in our new scheme we need to request multiple memory blocks
+    //to be able to verify integrity.
+    //so we have to generate the address to read the right address
+
+    if(!active_is_write){ //only need to read multiple blocks for reads
+        addr = base_addr + 64 * (active_requested_count);
+    }
+
+
+
+
+    if ( send_data_req(false, addr) ){
+
+        //keep track of data we are requesting for the purpose of 
+        if(addr != active_address){
+            
+            outstanding_superblock_reads.insert(
+                    make_pair(addr, active_address) );
+        }
+
+        active_requested_count++;
+
+
+        //we need to check we have requested an entire super block before proceeding to fetching other meta data
+
+        bool unfinished_requests =  !active_is_write && ( active_requested_count < MAC_SUPER_BLOCKS );
+
+        if(unfinished_requests) {
+            //we will still need to read more data in the next block
+            active_request_status = BLOCK_EXTRA;
+        }
+
+        else{
+            request_is_active = false;
+        }
+
+
+        MEE_DEBUG("EXTRA_BLOCK req\t0x" << hex << addr);
+    }
 
 
 }
@@ -251,79 +347,103 @@ void Decryptor::process_active(){
 
     switch(active_request_status){
 
-        case(BLOCK): //this is the starting state. 
-
-            if ( send_dram_req(false, current_active_request) ){
+        case(BLOCK): //this is the starting state
+            if ( send_data_req(false, active_address) ){
                 active_request_status = VER;
-                MEE_DEBUG("BLOCK req\t0x" << hex << current_active_request);
+                MEE_DEBUG("BLOCK req\t0x" << hex << active_address);
+
+                request_is_active = false;
+
+                break;
+            }
+
+        case (BLOCK_EXTRA):
+            request_extra_blocks();
+            break;
+
+        case(MAC):
+            addr = get_MAC_address(active_address);
+            if(send_cache_req(false, addr)){
+
+#ifdef TETRIS                
+                //for writes, we don't need to read the blocks
+                if(active_is_write) request_is_active = false;
+                else active_request_status = BLOCK_EXTRA; 
+#else
+                if(active_is_write) request_is_active = false;
+                else active_request_status = BLOCK;
+#endif
+                
+                outstanding_metadata_reads.insert(
+                    make_pair(addr, active_address) );
+
+                MEE_DEBUG("MAC req\t0x" << hex << addr << "\t0x" << hex << active_address);
             }
             break;
-        case(MAC):
-            addr = get_MAC_address(current_active_request);
+
+        case(VER):
+                
+            addr = get_VER_address(active_address);
             if(send_cache_req(false, addr)){
                 active_request_status = L0;
                 
                 outstanding_metadata_reads.insert(
-                    make_pair(addr, current_active_request) );
+                    make_pair(addr, active_address) );
 
-                MEE_DEBUG("MAC req\t0x" << hex << addr << "\t0x" << hex << current_active_request);
+                MEE_DEBUG("VER req\t0x" << hex << addr << "\t0x" << hex << active_address);
             }
             break;
-        case(VER):
-                
-            addr = get_VER_address(current_active_request);
-            if(send_cache_req(false, addr)){
-                active_request_status = MAC;
-                
-                outstanding_metadata_reads.insert(
-                    make_pair(addr, current_active_request) );
-
-                MEE_DEBUG("VER req\t0x" << hex << addr << "\t0x" << hex << current_active_request);
-            }
-            break;
+            
         case(L0):
                 
-            addr = get_L0_address(current_active_request);
+            addr = get_L0_address(active_address);
             if(send_cache_req(false, addr)){
                 active_request_status = L1;
                 
                 outstanding_metadata_reads.insert(
-                    make_pair(addr, current_active_request) );
+                    make_pair(addr, active_address) );
 
-                MEE_DEBUG("L0 req\t0x" << hex << addr << "\t0x" << hex << current_active_request);
+                MEE_DEBUG("L0 req\t0x" << hex << addr << "\t0x" << hex << active_address);
             }
             break;
+
         case(L1):
                 
-            addr = get_L1_address(current_active_request);
+            addr = get_L1_address(active_address);
             if(send_cache_req(false, addr)){
                 active_request_status = L2;
                 
                 outstanding_metadata_reads.insert(
-                    make_pair(addr, current_active_request) );
+                    make_pair(addr, active_address) );
 
-                MEE_DEBUG("L1 req\t0x" << hex << addr << "\t0x" << hex << current_active_request);
+                MEE_DEBUG("L1 req\t0x" << hex << addr << "\t0x" << hex << active_address);
             }
             break;
+
         case(L2):
-                
-            addr = get_L2_address(current_active_request);
+            addr = get_L2_address(active_address);
             if(send_cache_req(false, addr)){
-                //we are done requesting everything
-                request_is_active = false;
+                
+#ifdef TETRIS   
+                //in our scheme, we need to read the MAC for both reads and writes
+                active_request_status = MAC;
+#else
+                //in the base line scheme, we will simply compute a new MAC
+                if(active_is_write) request_is_active = false; // we are done!
+                else active_request_status = MAC; //go fetch the MAC
+#endif
                 
                 outstanding_metadata_reads.insert(
-                    make_pair(addr, current_active_request) );
+                    make_pair(addr, active_address) );
 
-                MEE_DEBUG("L2 req\t0x" << hex << addr << "\t0x" << hex << current_active_request);
+                MEE_DEBUG("L2 req\t0x" << hex << addr << "\t0x" << hex << active_address);
             }
             break;
+
+        default:
+            assert(false && "Invalid state!");
+
     }
-
-
-    
-    
-
 
 }
 
@@ -347,7 +467,6 @@ void Decryptor::process_mee_input(){
     //if allow 16 outstanding requests -> 16*270 ~4.2KB
     //if allow 8 outstanding requests -> 8*270 ~2.1KB
 
-    
 
     //if we are not done sending requests for MAC, CTR, etc ....
     //we proceed to do that
@@ -370,35 +489,44 @@ void Decryptor::process_mee_input(){
         StatusBits status;
         status.reset();
     
-        current_active_request = input_queue.front();         
-        active_write = input_type_queue.front();
+        active_address = input_queue.front();
+        active_is_write = input_type_queue.front();
 
 
-        MEE_DEBUG("processing\t0x" << hex << current_active_request);
+        MEE_DEBUG("processing\t0x" << hex << active_address);
 
         //for writes, we are not going to read the BLOCK
         //we start fetching from the VER, and set block as ready
-        if(active_write){
-            MEE_DEBUG("write_request\t0x" << hex << current_active_request);
+        if(active_is_write){
+            MEE_DEBUG("write_request\t0x" << hex << active_address);
             status.set(BLOCK);
-            active_request_status = VER;    
+            status.set(BLOCK_EXTRA);
+//            active_request_status = VER;    
             status.set(WRITE_FLAG);
         }
 
-        else{
-            active_request_status = BLOCK;    
-        }
+//        else{
+
+// #ifdef TETRIS
+//             active_request_status = BLOCK_EXTRA;
+// #else
+//             active_request_status = BLOCK;    
+// #endif
+
+            active_request_status = VER;    
+//        }
     
         transactions_status.push_back(status);
         //current_trans_index = transactions_status.size()-1;
+        transactions_addr.push_back( active_address );
+        mac_blocs_read.push_back(0);
 
-        transactions_addr.push_back( current_active_request );
-        
         
 
         input_queue.pop();
         input_type_queue.pop();
         request_is_active = true;
+
         
     }
     
@@ -413,15 +541,46 @@ void Decryptor::update_status(uint64_t addr){
 
     //FIXME: is 1 cycle too optimistic for this?
 
-
     auto type = get_block_type(addr);
     auto entry = outstanding_metadata_reads.find(addr);
+
+#ifdef TETRIS
+
+    //a data block might have been requested to check a MAC associated with 
+    // a super block
+    auto super_block_entry = outstanding_superblock_reads.find(addr);
+    bool mac_verify_read = super_block_entry != outstanding_superblock_reads.end();
+    
+    if(type == BLOCK && mac_verify_read ){    
+        type = BLOCK_EXTRA;
+    }
+
+    //for this purpose, the patch block is the same as VER
+    else if(type == PATCH_BLOCK){
+        
+        MEE_DEBUG("PATCH_BLOCK_DONE \t0x" << hex << addr)
+        type = VER;
+
+    }
+
+#endif
 
     uint64_t data_addr; 
 
     if(type == BLOCK){
+
         data_addr = addr;
+
     }
+
+#ifdef TETRIS
+    //this can only happen if MAC merging scheme is enabled
+    else if(type == BLOCK_EXTRA){
+        data_addr = super_block_entry->second;
+        outstanding_superblock_reads.erase(super_block_entry);
+    }
+#endif
+
     else {
 
         //erase from our outstanding metadata request list
@@ -431,15 +590,34 @@ void Decryptor::update_status(uint64_t addr){
     
 
 
-    //
+    
     int trans_idx = search_waiting_trans(data_addr, type);
     bool sram_hit = trans_idx  != -1;
 
+
+
+
     if(sram_hit){
         
-        MEE_DEBUG(RequestTypeStr[type]  << "_READY\t0x" << hex << addr << "\t0x" << hex << data_addr );
+        //if it's a meta data, we just set the right flag in the transaction status
+        //to indicate its ready
+        if(type != BLOCK_EXTRA){
+            MEE_DEBUG(RequestTypeStr[type]  << "_READY\t0x" << hex << addr << "\t0x" << hex << data_addr );
 
-        transactions_status[trans_idx].set(type);
+            transactions_status[trans_idx].set(type);
+        }   
+
+        //other wise, have to count the number of MAC super blocks we have read
+        //(this count does not include the block we are actually interested in)
+        else{
+            mac_blocs_read[trans_idx]++;
+            MEE_DEBUG("MAC_BLOCKS_READ\t0x"<<  hex << addr << "\t0x" << hex << data_addr );
+            if(mac_blocs_read[trans_idx] == MAC_SUPER_BLOCKS - 1){
+                transactions_status[trans_idx].set(BLOCK_EXTRA);
+                MEE_DEBUG("MAC_BLOCKS_READY\t0x"<< hex << data_addr );
+            }
+
+        }
         
         //check if that request has all what it needs and 
         //start decryption/re-encryption
@@ -447,8 +625,11 @@ void Decryptor::update_status(uint64_t addr){
                      transactions_status[trans_idx].test(L1) &&
                      transactions_status[trans_idx].test(L0) &&
                      transactions_status[trans_idx].test(MAC) &&
-                     transactions_status[trans_idx].test(VER)  &&
+                     transactions_status[trans_idx].test(VER)  && //this will be ready when either branched ctr or VER is read.
+                     transactions_status[trans_idx].test(BLOCK_EXTRA) &&
                      transactions_status[trans_idx].test(BLOCK);
+
+
 
         if( ready ){
             MEE_DEBUG("ALL_READY\t0x" << hex << data_addr);
@@ -496,6 +677,15 @@ void Decryptor::read_response(){
 }
 
 
+bool Decryptor::is_patched(uint64_t address){
+#ifdef TETRIS    
+    return true;
+#else
+    return false;
+#endif
+}
+
+
 //******************
 //processes responses returned from DRAM and meta-data caches
 void Decryptor::process_response(){
@@ -520,23 +710,49 @@ void Decryptor::process_response(){
     //1. determine the type of response - i.e. data block, MAC
     auto type = get_block_type(addr);
 
+    
+    //for the regular MEE implementation, is_patched will always return false.
+    //so this same code can be used in both types of simulations
+
+    if( type == VER && is_patched(addr) ) {
+        //if the block is patched, it means the VER value is a pointer, not an actual counter;
+        //so we fetch the value that is pointed to.
+        uint64_t patch_addr = get_patch_addr(addr);
+        patch_request_queue.push(patch_addr);
+
+        //get data address
+        auto entry = outstanding_metadata_reads.find(addr);
+        uint64_t data_addr = entry->second;
+
+        //we are done processing the VER
+        outstanding_metadata_reads.erase( entry );
+
+
+        outstanding_metadata_reads.insert(
+                    make_pair(patch_addr, data_addr) );
+
+
+        MEE_DEBUG("Requesting Patch\t0x" << hex << addr << "\t0x" << hex << data_addr);
+
+
+    }
+
+    //unpatched VER and PATCH blocks are processed as counters
     //these are counter values and need to pass through  an AES pipeline.
     //We will later use the output of the AES pipeline to encrypt/decrypt and compute MAC
     //(note that we assume the MAC is XOR'd with the keystream)
-    if( type == VER ) {
+    else if(type == PATCH_BLOCK ||  type == VER ){ 
+         //we need to encrypt/decrypt 64 bytes, so we need 4 AES blocks
+            
+            //HACK: feeding 0's into the pipline is like introducing a bubble.
+            //having 3 bubbles before feeding the actual address will effectively give us
+            //the latency we need
+            aes_input_queue.push(0);
+            aes_input_queue.push(0);
+            aes_input_queue.push(0);
+            aes_input_queue.push(addr);
 
-        //we need to encrypt/decrypt 64 bytes, so we need 4 AES blocks
-        
-        //HACK: feeding 0's into the pipline is like introducing a bubble.
-        //having 3 bubbles before feeding the actual address will effectively give us
-        //the latency we need
-        aes_input_queue.push(0);
-        aes_input_queue.push(0);
-        aes_input_queue.push(0);
-        aes_input_queue.push(addr);
-
-        MEE_DEBUG("VER AES Start\t0x" << hex << addr);
-
+            MEE_DEBUG("VER AES Start\t0x" << hex << addr);
     }
     
     //counters from L0, L1, L2 are used to mask the MAC (not for encryption/decryption)
@@ -617,12 +833,32 @@ void Decryptor::process_aes_pipeline(){
 }
 
 
+//*********************************
+//when a "branched" block is discovered, a new read request is 
+//add to a request queue. this function dequeues and processes requests 
+//to a branched counter
+
+void Decryptor::process_patch_RW(){
+
+    if( patch_request_queue.empty() ) return;
+
+    uint64_t addr = patch_request_queue.front();
+
+    if(send_cache_req (false ,addr) ){
+        patch_request_queue.pop();
+    }
+
+}
+
+
 
 //this function has to be called every cycle
 void Decryptor::tick(){
 
 
     current_cycle++;
+
+    process_patch_RW();
 
     process_response(); //process responses that was enqueued the prev cycles
 
@@ -670,7 +906,7 @@ bool Decryptor::is_output_ready(){
 
 }
 
-//the cores/caches use this function to know which memory 
+//the cores/caches use this function to know which memory request has completed this cycle
 //returns the address of the request that has completed
 uint64_t Decryptor::get_output(){
 

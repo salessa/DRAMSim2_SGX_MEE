@@ -10,9 +10,16 @@
 #define ERR_OUT(str)  std::cerr<< "\033[31m" << str <<endl << "\033[0m" << dec;
 
 
-#define TEST_SINGLE false
+#define REQ_CONT 10
+#define MIN_REQ_INTERVAL 0
+
+#define TEST_SINGLE true
 #define TEST_SEQ false
-#define TEST_RAND true
+#define TEST_RAND false
+
+
+
+uint64_t total_latency;
 
 /* callback functors */
 void some_object::read_complete(unsigned id, uint64_t address, uint64_t clock_cycle)
@@ -62,6 +69,8 @@ void some_object::capture_stat(){
         if (i->addr == stat_address && i->finished_cycle==0) {
             i->finished_cycle = stat_cycle;
             found = true;
+            total_latency += i->finished_cycle - i->requested_cycle;
+            //cout << "Latency:" << i->finished_cycle - i->requested_cycle << endl;
             break;
         }
         
@@ -117,16 +126,16 @@ void some_object::test_single(MultiChannelMemorySystem *mem){
     mem->update();
     mem->update();
 
-    mem->addTransaction(is_write, addr);
+    // mem->addTransaction(is_write, addr);
 
 
-    stat;
-    stat.addr = addr;
+    // stat;
+    // stat.addr = addr;
     
-    stat.requested_cycle = 4;
-    stat.finished_cycle =  0;
+    // stat.requested_cycle = 4;
+    // stat.finished_cycle =  0;
 
-    sim_stats.push_back(stat);
+    // sim_stats.push_back(stat);
 
 
 
@@ -144,15 +153,18 @@ void some_object::test_sequential(MultiChannelMemorySystem *mem, unsigned count,
     uint64_t addr = 0x300000UL;
 
     bool is_write = false;
-
+    unsigned last_req_cycle=0;
 
     while(current_cycles < cycles){
 
         current_cycles++;
 
-        if(mem->willAcceptTransaction(addr) && current_count < count ){
+        if(mem->willAcceptTransaction(addr) && current_count < count &&
+            last_req_cycle + MIN_REQ_INTERVAL <= current_cycles  ){
 
             mem->addTransaction(is_write, addr);
+
+            last_req_cycle = current_cycles;
 
             RequestStat stat;
             stat.addr = addr;
@@ -164,14 +176,16 @@ void some_object::test_sequential(MultiChannelMemorySystem *mem, unsigned count,
 
             sim_stats.push_back(stat);
 
+            addr = addr + 64;
+
         }
 
         //capture_stat();
         mem->update();
 
-        addr = addr + 64;
-
     }
+
+    assert(current_count == REQ_CONT);
 
 
 }
@@ -183,6 +197,7 @@ void some_object::test_rand(MultiChannelMemorySystem *mem, unsigned count, unsig
 
     bool is_write = false;
 
+    unsigned last_req_cycle = 0;
 
     while(current_cycles < cycles){
 
@@ -191,11 +206,13 @@ void some_object::test_rand(MultiChannelMemorySystem *mem, unsigned count, unsig
         addr = random() % 0x200000000L;
         addr = addr & ~0x3f; //align to 64B
 
-        is_write = ( random() % 2 == 0 );
+        is_write = false; //( random() % 2 == 0 );
 
-        if(mem->willAcceptTransaction(addr) && current_count < count ){
+        if(mem->willAcceptTransaction(addr) && current_count < count && 
+           last_req_cycle + MIN_REQ_INTERVAL <= current_cycles ){
 
             mem->addTransaction(is_write, addr);
+            last_req_cycle = current_cycles;
 
             RequestStat stat;
             stat.addr = addr;
@@ -217,6 +234,8 @@ void some_object::test_rand(MultiChannelMemorySystem *mem, unsigned count, unsig
         
 
     }
+
+    assert(current_count == count);
 
     
 
@@ -232,7 +251,7 @@ some_object* create_new_sys(){
     TransactionCompleteCB *read_cb = new Callback<some_object, void, unsigned, uint64_t, uint64_t>(obj, &some_object::read_complete);
     TransactionCompleteCB *write_cb = new Callback<some_object, void, unsigned, uint64_t, uint64_t>(obj, &some_object::write_complete);
 
-    obj->mem = getMemorySystemInstance("ini/DDR3_micron_64M_8B_x4_sg15.ini", "system.ini", "..", "example_app", 16384);     
+    obj->mem = getMemorySystemInstance("ini/DDR3_micron_32M_8B_x4_sg125.ini", "system.ini", "..", "example_app", 16384);     
 
     obj->mem->RegisterCallbacks(read_cb, write_cb, power_callback);
     obj->mem->setCPUClockSpeed(3.2e9);
@@ -249,8 +268,8 @@ int main()
 {
     
 
-    unsigned req_count = 1e5;
-    unsigned sim_cycles = 1000*req_count; //allow 2K cycles per request which is too much.
+    
+    unsigned sim_cycles = 1000*REQ_CONT; //allow 2K cycles per request which is too much.
     
 
     some_object *obj;
@@ -274,10 +293,12 @@ int main()
         obj = create_new_sys();
 
         
-        obj->test_sequential(obj->mem, req_count, sim_cycles );
+        obj->test_sequential(obj->mem, REQ_CONT, sim_cycles );
         obj->check_stats();
 
         delete obj;
+
+        cout << "Average Latency SEQ: " << total_latency/REQ_CONT << endl;
     }
 
     if(TEST_RAND){
@@ -286,12 +307,17 @@ int main()
         //obj->mem->RegisterCallbacks(read_cb, write_cb, power_callback);
         
 
-        obj->test_rand(obj->mem, req_count, sim_cycles );
+        obj->test_rand(obj->mem, REQ_CONT, sim_cycles );
         obj->check_stats();
 
 
         delete obj;
+
+        cout << "Average Latency RAND: " << total_latency/REQ_CONT << endl;
     }
+
+
+
 
 
     return 0; 

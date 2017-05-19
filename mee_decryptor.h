@@ -1,7 +1,8 @@
 
-
 #ifndef DEC_H
 #define DEC_H
+
+#define TETRIS
 
 class Decryptor;
 
@@ -36,9 +37,28 @@ using namespace std;
 #define L0_REGION_SIZE  4*MB
 #define L1_REGION_SIZE  MB/2 //?
 #define L2_REGION_SIZE  MB/16 //?
+#define L3_REGION_SIZE  MB/16 //?
+#define L4_REGION_SIZE  MB/16 //?
+#define L5_REGION_SIZE  MB/16 //?
+#define PATCH_REGION_SIZE  MB/16 //?
 
+#define CTR_SUPER_BLOCK_SIZE 512
+#define MAC_SUPER_BLOCK_SIZE 128
+
+#define MAC_SUPER_BLOCKS MAC_SUPER_BLOCK_SIZE/64 
+#define MAC_SUPER_BLOCK_MASK ~(MAC_SUPER_BLOCK_SIZE-1)
+
+
+
+
+
+#ifndef TETRIS
 #define MAC_PER_CL 8
 #define CTR_PER_CL 8
+#else
+#define MAC_PER_CL 4
+#define CTR_PER_CL 4
+#endif
 
 
 
@@ -50,6 +70,11 @@ using namespace std;
 #define L0_REGION_START  VER_REGION_START + VER_REGION_SIZE + 64
 #define L1_REGION_START  L0_REGION_START + L0_REGION_SIZE + 64
 #define L2_REGION_START  L1_REGION_START + L1_REGION_SIZE + 64
+#define L3_REGION_START  L2_REGION_START + L2_REGION_SIZE + 64
+#define L4_REGION_START  L3_REGION_START + L3_REGION_SIZE + 64
+#define L5_REGION_START  L4_REGION_START + L4_REGION_SIZE + 64
+#define PATCH_REGION_START  L5_REGION_START + L5_REGION_SIZE + 64
+
 
 
 //if the CPU simulator does not implement a proper TLB,
@@ -59,7 +84,7 @@ using namespace std;
 #define VIRT_ADDR_MASK ~0x0000ffffffff
 
 //mem block, MAC, ctr, L0, L1, L2
-const unsigned REQUESTS_PER_BLOCK = 6;
+const unsigned REQUESTS_PER_BLOCK = 8;
 
 
 class Decryptor: public SimObject{
@@ -83,13 +108,13 @@ private:
     FACache *cache;
     MEESystem* dram;
 
-    typedef enum RequestType_{
-        BLOCK=0, MAC, VER, L0, L1, L2
-    }RequestType;
+    typedef enum RequestFlag_{
+        BLOCK=0, MAC, VER, L0, L1, L2, PATCH_BLOCK, BLOCK_EXTRA,
+        WRITE_FLAG
+    }RequestFlag;
 
-    #define WRITE_FLAG L2 + 1
 
-    string RequestTypeStr[6];
+    string RequestTypeStr[REQUESTS_PER_BLOCK];
 
     void process_active();
     void process_mee_input();
@@ -97,7 +122,7 @@ private:
     void process_final_pipeline();
     uint64_t get_counter_address(uint64_t address);
     int search_trans_by_addr(uint64_t addr);
-    int search_waiting_trans(uint64_t addr, RequestType_ type);
+    int search_waiting_trans(uint64_t addr, RequestFlag_ type);
     //void process_ctr_response();
 
 
@@ -118,6 +143,8 @@ private:
 
     queue<uint64_t> cache_update_queue;
 
+    queue<uint64_t> patch_request_queue;
+
 
     vector<uint64_t> outstanding_ctr_req;
     unordered_map<uint64_t, uint64_t> scheduled_response;
@@ -135,8 +162,14 @@ private:
     //instead, we only store valid bits that are set when read is completed
 
 //    unordered_map<uint64_t, StatusBits> transactions;    
+
+      //these are "parallel" arrays.
       vector<StatusBits> transactions_status;
+      vector<uint8_t> mac_blocs_read;
       vector<uint64_t> transactions_addr;
+
+
+      
 
     //outstanding_metadata_reads is used to track what data block each meta-data 
     //read corresponds to. we index into it the address of a DRAM request and get the
@@ -146,8 +179,9 @@ private:
 
     //we use multimap since request to the metadata memory block can come
     //form different requests.
-
     multimap<uint64_t, uint64_t> outstanding_metadata_reads;
+
+    multimap<uint64_t, uint64_t> outstanding_superblock_reads;
 
 
     vector<uint64_t> outstanding_dram;
@@ -162,7 +196,7 @@ private:
     //we assume the heighrst part of the address space is used for this
     //uint64_t ver_start, ver_end, mac_start, mac_end, l0_start, l0_end, l1_start, l1_end, l2_start, l2_end;
 
-    RequestType get_block_type(uint64_t type);
+    RequestFlag get_block_type(uint64_t type);
     void finish_crypto();
     bool send_dram_req(bool, uint64_t addr);    
     bool send_cache_req(bool, uint64_t addr);    
@@ -173,13 +207,29 @@ private:
     uint64_t get_L1_address(uint64_t data_addr);
     uint64_t get_L2_address(uint64_t data_addr);
 
+    bool is_patched(uint64_t address);
+    uint64_t get_patch_addr(uint64_t ver_address);
+    void request_extra_blocks();
+    void process_patch_RW();
+    void update_patch(uint64_t data_addr);
+    bool send_data_req(bool is_write, uint64_t addr);
 
-    uint64_t current_active_request;
-    //int current_trans_index;
-    bool active_write ;
-    bool request_is_active ;
-    uint16_t active_request_status;
 
+    //*****************
+    //these variables keep track of data associated with an active request
+    //an active request is one for which mem read requests (read MAC, CTR etc.. are being generated)
+
+    uint64_t active_address; //the address of the data block we are reading
+    bool active_is_write ;
+    bool request_is_active; //true if there is an active address currently
+    RequestFlag_ active_request_status;
+
+    //in our new scheme, we need to read multiple data blocks for veryfying integiry
+    //this variable keeps track of the number of data blocks already requested
+    //for the base line case, this will have a max value of 1
+    uint16_t active_requested_count;
+
+    //*****************
 
 };
 
