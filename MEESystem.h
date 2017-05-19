@@ -26,7 +26,7 @@ using namespace DRAMSim;
 //TODO: move to a conf header file
 #define CACHE_ACCESS_CYCLES 2
 #define CACHE_SIZE 4*1024*1024
-#define CPU_FREQ_HZ 3*1e9
+
 
 class MEESystem {
 public:

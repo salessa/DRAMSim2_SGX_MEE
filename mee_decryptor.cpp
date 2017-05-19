@@ -317,10 +317,11 @@ void Decryptor::request_extra_blocks(){
 
         else{
             request_is_active = false;
+            active_requested_count = 0;
         }
 
 
-        MEE_DEBUG("EXTRA_BLOCK req\t0x" << hex << addr);
+        MEE_DEBUG("EXTRA_BLOCK req\t0x" << hex << addr << "\t0x" << hex << active_address);
     }
 
 
@@ -626,8 +627,11 @@ void Decryptor::update_status(uint64_t addr){
                      transactions_status[trans_idx].test(L0) &&
                      transactions_status[trans_idx].test(MAC) &&
                      transactions_status[trans_idx].test(VER)  && //this will be ready when either branched ctr or VER is read.
-                     transactions_status[trans_idx].test(BLOCK_EXTRA) &&
                      transactions_status[trans_idx].test(BLOCK);
+
+#ifdef TETRIS
+        ready = ready && transactions_status[trans_idx].test(BLOCK_EXTRA);
+#endif
 
 
 
