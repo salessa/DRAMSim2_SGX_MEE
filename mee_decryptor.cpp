@@ -197,8 +197,10 @@ void Decryptor::finish_crypto(){
         cache_update_queue.push( get_MAC_address(addr) );
         cache_update_queue.push( get_VER_address(addr) );
 
+#ifdef TETRIS
         //we need to update the patch status
         update_patch(addr);
+#endif
 
 
     }
@@ -211,7 +213,10 @@ void Decryptor::finish_crypto(){
 
     transactions_status.erase( transactions_status.begin() + trans_idx );
     transactions_addr.erase( transactions_addr.begin() + trans_idx );
+
+#ifdef PMAC
     mac_blocs_read.erase(mac_blocs_read.begin() + trans_idx);
+#endif    
 
 }
 
@@ -260,7 +265,7 @@ Decryptor::RequestFlag Decryptor::get_block_type(uint64_t type){
 
 bool Decryptor::send_data_req(bool is_write, uint64_t addr){
     
-#ifndef TETRIS
+#ifndef PMAC
     return send_dram_req(is_write, addr);
 
 #else 
@@ -366,7 +371,7 @@ void Decryptor::process_active(){
             addr = get_MAC_address(active_address);
             if(send_cache_req(false, addr)){
 
-#ifdef TETRIS                
+#ifdef PMAC                
                 //for writes, we don't need to read the blocks
                 if(active_is_write) request_is_active = false;
                 else active_request_status = BLOCK_EXTRA; 
@@ -425,7 +430,7 @@ void Decryptor::process_active(){
             addr = get_L2_address(active_address);
             if(send_cache_req(false, addr)){
                 
-#ifdef TETRIS   
+#ifdef PMAC   
                 //in our scheme, we need to read the MAC for both reads and writes
                 active_request_status = MAC;
 #else
@@ -545,8 +550,8 @@ void Decryptor::update_status(uint64_t addr){
     auto type = get_block_type(addr);
     auto entry = outstanding_metadata_reads.find(addr);
 
-#ifdef TETRIS
 
+#ifdef PMAC
     //a data block might have been requested to check a MAC associated with 
     // a super block
     auto super_block_entry = outstanding_superblock_reads.find(addr);
@@ -556,14 +561,16 @@ void Decryptor::update_status(uint64_t addr){
         type = BLOCK_EXTRA;
     }
 
+#endif
+
+#ifdef TETRIS
     //for this purpose, the patch block is the same as VER
-    else if(type == PATCH_BLOCK){
+    if(type == PATCH_BLOCK){
         
         MEE_DEBUG("PATCH_BLOCK_DONE \t0x" << hex << addr)
         type = VER;
 
     }
-
 #endif
 
     uint64_t data_addr; 
@@ -574,7 +581,7 @@ void Decryptor::update_status(uint64_t addr){
 
     }
 
-#ifdef TETRIS
+#ifdef PMAC
     //this can only happen if MAC merging scheme is enabled
     else if(type == BLOCK_EXTRA){
         data_addr = super_block_entry->second;
@@ -629,11 +636,11 @@ void Decryptor::update_status(uint64_t addr){
                      transactions_status[trans_idx].test(VER)  && //this will be ready when either branched ctr or VER is read.
                      transactions_status[trans_idx].test(BLOCK);
 
-#ifdef TETRIS
+#ifdef PMAC
+        //when using PMACs, we also need to wait until all data blocks 
+        //in the super block are read
         ready = ready && transactions_status[trans_idx].test(BLOCK_EXTRA);
 #endif
-
-
 
         if( ready ){
             MEE_DEBUG("ALL_READY\t0x" << hex << data_addr);
@@ -682,7 +689,9 @@ void Decryptor::read_response(){
 
 
 bool Decryptor::is_patched(uint64_t address){
+
 #ifdef TETRIS    
+    //TODO: enable simulation with a) everything patched, b) axing enabled & re-encryption enabled
     return true;
 #else
     return false;

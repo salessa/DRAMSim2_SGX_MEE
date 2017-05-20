@@ -2,7 +2,8 @@
 #ifndef DEC_H
 #define DEC_H
 
-//#define TETRIS
+#define TETRIS
+//#define PMAC
 
 class Decryptor;
 
@@ -43,7 +44,7 @@ using namespace std;
 #define PATCH_REGION_SIZE  MB/16 //?
 
 #define CTR_SUPER_BLOCK_SIZE 512
-#define MAC_SUPER_BLOCK_SIZE 256
+#define MAC_SUPER_BLOCK_SIZE 512
 
 #define MAC_SUPER_BLOCKS MAC_SUPER_BLOCK_SIZE/64 
 #define MAC_SUPER_BLOCK_MASK ~(MAC_SUPER_BLOCK_SIZE-1)
