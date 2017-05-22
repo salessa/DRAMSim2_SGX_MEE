@@ -12,8 +12,10 @@ Pipeline<T>::Pipeline(uint64_t pipeline_stages): num_stages(pipeline_stages) {
 
 	for (int i = 0; i < num_stages; ++i)
 	{
-		stage[i] = (T)NULL;
+        stage[i] = (T)NULL;
 	}
+
+    input = (T)NULL;
 
 }
 

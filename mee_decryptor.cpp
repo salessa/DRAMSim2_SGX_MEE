@@ -44,8 +44,11 @@ inline uint64_t Decryptor::get_MAC_address(uint64_t data_addr){
 
     uint64_t offset = (data_addr - DATA_REGION_START) /MAC_PER_CL; 
 
-    //align to a 64B block
-    return (MAC_REGION_START + offset) & ~0x3f; 
+    uint64_t ret = (MAC_REGION_START + offset) & ~0x3f; //align to a 64B block
+
+    assert(ret < MAC_REGION_START + MAC_REGION_SIZE && "Incorrect Address");
+    
+    return ret;
 }
 
 inline uint64_t Decryptor::get_VER_address(uint64_t data_addr){
@@ -187,6 +190,8 @@ void Decryptor::finish_crypto(){
     bool is_write = transactions_status[trans_idx].test(WRITE_FLAG);
 
     if(is_write){
+
+        MEE_DEBUG("write_done\t0x" << hex << addr);
 
         //on a write, all counters and MAC need to be updated.
         //since we are enqueuing the updates (which means they will not be sent to cache
@@ -509,8 +514,12 @@ void Decryptor::process_mee_input(){
             MEE_DEBUG("write_request\t0x" << hex << active_address);
             status.set(BLOCK);
             status.set(BLOCK_EXTRA);
-//            active_request_status = VER;    
             status.set(WRITE_FLAG);
+#ifndef PMAC
+            //the baseline scheme does not need a MAC to be fetched on write
+            status.set(MAC);
+#endif
+
         }
 
 //        else{
@@ -873,6 +882,10 @@ void Decryptor::tick(){
 
     current_cycle++;
 
+    if(!output_queue.empty()) output_queue.pop();
+    if(!output_write_flags.empty()) output_write_flags.pop();
+
+
     process_patch_RW();
 
     process_response(); //process responses that was enqueued the prev cycles
@@ -929,7 +942,7 @@ uint64_t Decryptor::get_output(){
 //    assert(is_output_ready() && "No output available");
 
     auto ret = output_queue.front();
-    output_queue.pop();
+
 
     return ret;
 
@@ -937,7 +950,6 @@ uint64_t Decryptor::get_output(){
 
 bool Decryptor::output_is_write(){
     auto ret = output_write_flags.front();
-    output_write_flags.pop();
     return ret;
 
 

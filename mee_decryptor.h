@@ -35,14 +35,14 @@ using namespace std;
 
 #define MB 1024*1024
 
-#define MAC_REGION_SIZE 60*MB
-#define VER_REGION_SIZE 60*MB
-#define L0_REGION_SIZE  4*MB
-#define L1_REGION_SIZE  MB/2 //?
-#define L2_REGION_SIZE  MB/16 //?
-#define L3_REGION_SIZE  MB/16 //?
-#define L4_REGION_SIZE  MB/16 //?
-#define L5_REGION_SIZE  MB/16 //?
+#define MAC_REGION_SIZE 512*MB //512MB covers a 4GB space!
+#define VER_REGION_SIZE 512*MB
+#define L0_REGION_SIZE  VER_REGION_SIZE/8
+#define L1_REGION_SIZE  L0_REGION_SIZE/8 //?
+#define L2_REGION_SIZE  L1_REGION_SIZE/8 //?
+#define L3_REGION_SIZE  L2_REGION_SIZE/8 //?
+#define L4_REGION_SIZE  L3_REGION_SIZE/8 //?
+#define L5_REGION_SIZE  L4_REGION_SIZE/8 //?
 #define PATCH_REGION_SIZE  MB/16 //?
 
 #define CTR_SUPER_BLOCK_SIZE 512
