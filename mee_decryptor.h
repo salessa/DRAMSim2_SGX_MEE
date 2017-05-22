@@ -89,7 +89,7 @@ using namespace std;
 //it might send the virtual address. 
 //this will be problamatic when computing the address for CTR, MAC etc...
 //so we mask it first
-#define VIRT_ADDR_MASK ~0 //~0x0000ffffffff
+#define VIRT_ADDR_MASK 0xffffffff;
 
 //mem block, MAC, ctr, L0, L1, L2
 const unsigned REQUESTS_PER_BLOCK = 8;
