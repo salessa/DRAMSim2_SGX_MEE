@@ -129,6 +129,8 @@ bool Decryptor::send_dram_req(bool is_write, uint64_t addr){
 
     if(dram->can_accept_dram_req(addr)){
 
+        MEE_DEBUG("DRAM_Data_Req:\t0x" << hex << addr);
+
         bool ret = dram->send_dram_req(is_write, addr);
         if(ret) outstanding_dram.push_back(addr);
         return ret;
@@ -890,7 +892,7 @@ void Decryptor::tick(){
 //the core/caches uses this function to send memory requests
 bool Decryptor::add_input(bool is_write, uint64_t address){
     
-//    assert(can_accept_input() && "Decryptor: cannot take input this cycle" );
+    assert(can_accept_input() && "Decryptor: cannot take input this cycle" );
 
     //MEE_DEBUG("Cypto module\t" << address);
     input_queue.push(address);
@@ -908,7 +910,8 @@ bool Decryptor::can_accept_input(){
 
 
     return input_queue.size() < DECRYPTOR_INPUT_QUEUE && 
-           cache_update_queue.size() <= CACHE_UPDATE_QUEUE;
+           cache_update_queue.size() < CACHE_UPDATE_QUEUE && 
+           outstanding_dram.size() < DRAM_REQ_OUTSTANDING;
 
 }
 

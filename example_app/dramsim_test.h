@@ -80,5 +80,7 @@ class some_object
         void capture_stat();
         void check_stats();
         string dump_and_clear();
+        unsigned current_cycles = 0;
+        unsigned stalled_cycles = 0;
 
 };

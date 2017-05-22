@@ -10,11 +10,11 @@
 #define ERR_OUT(str)  std::cerr<< "\033[31m" << str <<endl << "\033[0m" << dec;
 
 
-#define REQ_CONT 10
-#define MIN_REQ_INTERVAL 0
+#define REQ_CONT 1000
+#define MIN_REQ_INTERVAL 1
 
-#define TEST_SINGLE true
-#define TEST_SEQ false
+#define TEST_SINGLE false
+#define TEST_SEQ true
 #define TEST_RAND false
 
 
@@ -29,7 +29,7 @@ void some_object::read_complete(unsigned id, uint64_t address, uint64_t clock_cy
 
     stat_new = true;
     stat_address = address;
-    stat_cycle = clock_cycle;
+    stat_cycle = current_cycles;
     stat_is_write = false;
 
     capture_stat();
@@ -70,7 +70,6 @@ void some_object::capture_stat(){
             i->finished_cycle = stat_cycle;
             found = true;
             total_latency += i->finished_cycle - i->requested_cycle;
-            //cout << "Latency:" << i->finished_cycle - i->requested_cycle << endl;
             break;
         }
         
@@ -108,11 +107,11 @@ void some_object::check_stats(){
 void some_object::test_single(MultiChannelMemorySystem *mem){
 
     bool is_write = false;
-    uint64_t addr = 0x300000UL;
+    uint64_t addr = 0x327b23c0; //0x300000UL;
 
     unsigned cycles = 4000;
 
-    mem->addTransaction(is_write, addr);
+    assert(mem->addTransaction(is_write, addr) && "ADD Failed");
 
     RequestStat stat;
     stat.addr = addr;
@@ -149,20 +148,21 @@ void some_object::test_single(MultiChannelMemorySystem *mem){
 
 void some_object::test_sequential(MultiChannelMemorySystem *mem, unsigned count, unsigned cycles){
 
-    unsigned current_count = 0, current_cycles = 0;
+    unsigned current_count = 0;
     uint64_t addr = 0x300000UL;
+    unsigned ready_cycle = 0;
 
     bool is_write = false;
     unsigned last_req_cycle=0;
 
-    while(current_cycles < cycles){
+    while(current_cycles < cycles ){
 
         current_cycles++;
 
         if(mem->willAcceptTransaction(addr) && current_count < count &&
             last_req_cycle + MIN_REQ_INTERVAL <= current_cycles  ){
 
-            mem->addTransaction(is_write, addr);
+            assert(mem->addTransaction(is_write, addr) && "Add failed");
 
             last_req_cycle = current_cycles;
 
@@ -170,6 +170,7 @@ void some_object::test_sequential(MultiChannelMemorySystem *mem, unsigned count,
             stat.addr = addr;
             
             stat.requested_cycle = current_cycles;
+            cout << "requested @ cycle\t" << current_cycles << endl;
             stat.finished_cycle =  0;
 
             current_count++;
@@ -178,6 +179,9 @@ void some_object::test_sequential(MultiChannelMemorySystem *mem, unsigned count,
 
             addr = addr + 64;
 
+        }
+        else{
+            if(current_count < REQ_CONT) stalled_cycles++;
         }
 
         //capture_stat();
@@ -192,7 +196,8 @@ void some_object::test_sequential(MultiChannelMemorySystem *mem, unsigned count,
 
 void some_object::test_rand(MultiChannelMemorySystem *mem, unsigned count, unsigned cycles){
 
-    unsigned current_count = 0, current_cycles = 0;
+    unsigned current_count = 0;
+
     uint64_t addr;
 
     bool is_write = false;
@@ -211,7 +216,7 @@ void some_object::test_rand(MultiChannelMemorySystem *mem, unsigned count, unsig
         if(mem->willAcceptTransaction(addr) && current_count < count && 
            last_req_cycle + MIN_REQ_INTERVAL <= current_cycles ){
 
-            mem->addTransaction(is_write, addr);
+            assert(mem->addTransaction(is_write, addr) && "ADD failed");
             last_req_cycle = current_cycles;
 
             RequestStat stat;
@@ -269,7 +274,7 @@ int main()
     
 
     
-    unsigned sim_cycles = 1000*REQ_CONT; //allow 2K cycles per request which is too much.
+    unsigned sim_cycles = 1000*REQ_CONT; //allow 1K cycles per request which is too much.
     
 
     some_object *obj;
@@ -284,6 +289,8 @@ int main()
         //obj->test_sequential(obj->mem, 1, 600 );
         obj->test_single(obj->mem);
         obj->check_stats();
+        cout << "Stalled Cycles:\t" << obj->stalled_cycles << endl;
+
         delete obj;
     }
 
@@ -295,10 +302,13 @@ int main()
         
         obj->test_sequential(obj->mem, REQ_CONT, sim_cycles );
         obj->check_stats();
+        
+        cout << "Stalled Cycles:\t" << obj->stalled_cycles << endl;
+
 
         delete obj;
 
-        cout << "Average Latency SEQ: " << total_latency/REQ_CONT << endl;
+        cout << "Average Latency SEQ: "  << "\t" << total_latency/REQ_CONT << endl;
     }
 
     if(TEST_RAND){
@@ -310,11 +320,14 @@ int main()
         obj->test_rand(obj->mem, REQ_CONT, sim_cycles );
         obj->check_stats();
 
+        cout << "Stalled Cycles:\t" << obj->stalled_cycles << endl;
 
-        delete obj;
 
         cout << "Average Latency RAND: " << total_latency/REQ_CONT << endl;
     }
+
+
+
 
 
 

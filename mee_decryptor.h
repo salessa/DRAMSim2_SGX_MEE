@@ -2,7 +2,7 @@
 #ifndef DEC_H
 #define DEC_H
 
-#define TETRIS
+//#define TETRIS
 //#define PMAC
 
 class Decryptor;
@@ -24,8 +24,10 @@ class Decryptor;
 using namespace std;
 
 //TODO: move to config header
-#define DECRYPTOR_INPUT_QUEUE 8
-#define CACHE_UPDATE_QUEUE 8
+#define DECRYPTOR_INPUT_QUEUE 48
+#define CACHE_UPDATE_QUEUE 16
+#define DRAM_REQ_OUTSTANDING 48 //this does not include request made through caches
+
 #define AES_STAGES 10
 
 //do GF mult + XOR + compare MAC
@@ -52,13 +54,18 @@ using namespace std;
 
 
 
-
-#ifndef TETRIS
-#define MAC_PER_CL 8
-#define CTR_PER_CL 8
-#else
-#define MAC_PER_CL 4
+//FIXME
+#ifdef TETRIS
 #define CTR_PER_CL 4
+#else
+#define CTR_PER_CL 8
+#endif
+
+//FIXME
+#ifdef PMAC
+#define MAC_PER_CL 4
+#else
+#define MAC_PER_CL 8
 #endif
 
 
@@ -82,7 +89,7 @@ using namespace std;
 //it might send the virtual address. 
 //this will be problamatic when computing the address for CTR, MAC etc...
 //so we mask it first
-#define VIRT_ADDR_MASK ~0x0000ffffffff
+#define VIRT_ADDR_MASK ~0 //~0x0000ffffffff
 
 //mem block, MAC, ctr, L0, L1, L2
 const unsigned REQUESTS_PER_BLOCK = 8;
