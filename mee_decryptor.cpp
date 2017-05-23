@@ -604,6 +604,7 @@ void Decryptor::update_status(uint64_t addr){
 
         //erase from our outstanding metadata request list
         data_addr = entry->second;    
+        MEE_DEBUG("removing_meta:0x" << hex << addr << hex << "\t0x" << hex << data_addr);
         outstanding_metadata_reads.erase( entry );
     }
     
@@ -905,7 +906,11 @@ void Decryptor::tick(){
 //the core/caches uses this function to send memory requests
 bool Decryptor::add_input(bool is_write, uint64_t address){
     
-    assert(can_accept_input() && "Decryptor: cannot take input this cycle" );
+    //assert(can_accept_input() && "Decryptor: cannot take input this cycle" );
+    
+    if (!can_accept_input()) {
+        MEE_DEBUG("Warning: Decryptor: should not take input this cycle");
+    }
 
     //MEE_DEBUG("Cypto module\t" << address);
     input_queue.push(address);
@@ -949,6 +954,9 @@ uint64_t Decryptor::get_output(){
 }
 
 bool Decryptor::output_is_write(){
+
+    if(output_queue.empty()) return false;
+
     auto ret = output_write_flags.front();
     return ret;
 
