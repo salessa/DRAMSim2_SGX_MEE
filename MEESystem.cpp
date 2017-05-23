@@ -1,5 +1,20 @@
 
 #include "MEESystem.h"
+#include <sstream>
+#include <fstream>
+
+
+
+//we are not making these constants since
+//we want them to be configurable
+
+static unsigned CACHE_SIZE = 4*1024;
+
+static unsigned CTR_SUPER_BLOCK_SIZE = 512;
+static unsigned MAC_SUPER_BLOCK_SIZE = 512;
+
+void load_mee_config();
+void dump_config(string);
 
 
 void MEESystem::tick(){
@@ -96,6 +111,35 @@ void power_callback(double a, double b, double c, double d)
 MEESystem::MEESystem(MultiChannelMemorySystem *mem_sys_): mem_sys(mem_sys_), current_cycle(0){
 
 
+    
+    std::ostringstream config_log;
+
+
+    load_mee_config();
+
+    config_log << "MEE_CACHE_SIZE\t" << CACHE_SIZE/1024 << "KB\n";
+    config_log << "MAC_SUPER_BLOCK_SIZE\t" << MAC_SUPER_BLOCK_SIZE << "B\n";
+    config_log << "CTR_SUPER_BLOCK_SIZE\t" << CTR_SUPER_BLOCK_SIZE << "B\n";
+
+#ifdef TETRIS
+    config_log << "CTR_OPT_ENABLED\t" << "Y\n";
+#else
+    config_log << "CTR_OPT_ENABLED\t" << "N\n";
+#endif
+
+
+#ifdef PMAC
+    config_log << "MAC_OPT_ENABLED\t" << "Y\n";
+#else
+    config_log << "MAC_OPT_ENABLED\t" << "N\n";
+#endif
+
+    dump_config(config_log.str());
+
+
+    MEE_DEBUG("MEE_CACHE_SIZE:\t" << CACHE_SIZE/1024 << "KB");
+    
+
     init_sim_objects();
 
     callbackObj = new MEECallBack(&channelResponse);
@@ -159,6 +203,8 @@ uint64_t MEESystem::get_dram_response(){
 
 void MEESystem::init_sim_objects(){
 
+
+
 	//on-chip fully associative SRAM cache
     //on a miss, sends DRAM requests
     crypto_cache = new FACache(this, CACHE_SIZE, CACHE_ACCESS_CYCLES);
@@ -167,7 +213,8 @@ void MEESystem::init_sim_objects(){
 
 	//encryption/decryption pipeline:
     //requests are sent to the crypto cache. 
-	decryptor = new Decryptor(crypto_cache, this);
+	decryptor = new Decryptor(crypto_cache, this, 
+                              MAC_SUPER_BLOCK_SIZE, CTR_SUPER_BLOCK_SIZE);
 
 	simObjects.push_back( (SimObject*) decryptor);
 	
@@ -176,3 +223,42 @@ void MEESystem::init_sim_objects(){
 
 
 
+
+//=======================
+//these functions load MEE settings from environment variables
+
+unsigned read_from_env(const char* var_name, unsigned default_val){
+    
+    char *val = getenv(var_name);
+
+    if(val != NULL){
+        return unsigned( atoi(val) );
+    }
+
+    else{
+        return default_val;
+    }
+
+
+}
+
+void load_mee_config(){
+
+
+    CTR_SUPER_BLOCK_SIZE = read_from_env("CTR_SUPER_BLOCK_SIZE", CTR_SUPER_BLOCK_SIZE);
+    
+    MAC_SUPER_BLOCK_SIZE = read_from_env("MAC_SUPER_BLOCK_SIZE", MAC_SUPER_BLOCK_SIZE);
+
+    CACHE_SIZE = read_from_env("MEE_CACHE_SIZE", CACHE_SIZE);
+
+    
+}
+
+void dump_config(string configs){
+    
+    ofstream config_file;
+    config_file.open ("mee.cfg");
+    config_file << configs << endl;
+    config_file.close();
+
+}

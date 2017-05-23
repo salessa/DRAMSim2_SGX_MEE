@@ -6,7 +6,7 @@ namespace DRAMSim{
 	class MultiChannelMemorySystem;
 };
 
-
+#include "mee_conf.h"
 #include "mee_utils.h"
 #include "Callback.h"
 #include "MultiChannelMemorySystem.h"
@@ -22,10 +22,6 @@ namespace DRAMSim{
 
 using namespace std;
 using namespace DRAMSim;
-
-//TODO: move to a conf header file
-#define CACHE_ACCESS_CYCLES 2
-#define CACHE_SIZE 4*1024*1024
 
 
 class MEESystem {

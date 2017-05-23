@@ -2,7 +2,21 @@
 
 
 
-Decryptor::Decryptor(FACache *cache_, MEESystem *dram_):
+//we are not making these constants since
+//we want them to be configurable
+
+static unsigned CTR_SUPER_BLOCK_SIZE;
+static unsigned MAC_SUPER_BLOCK_SIZE;
+
+static unsigned MAC_SUPER_BLOCKS;
+static unsigned MAC_SUPER_BLOCK_MASK;
+
+
+
+
+
+Decryptor::Decryptor(FACache *cache_, MEESystem *dram_, unsigned mac_super_block_size,
+    unsigned ctr_super_block_size):
   cache(cache_),dram(dram_),
   RequestTypeStr{"BLOCK", "MAC", "VER", "L0", "L1", "L2", "PATCH_BLOCK"}, 
   active_address(0),
@@ -10,10 +24,23 @@ Decryptor::Decryptor(FACache *cache_, MEESystem *dram_):
   request_is_active(false) {
 
 
+    CTR_SUPER_BLOCK_SIZE = ctr_super_block_size;
+    MAC_SUPER_BLOCK_SIZE = mac_super_block_size;
+
+    MAC_SUPER_BLOCKS = MAC_SUPER_BLOCK_SIZE/64;
+    MAC_SUPER_BLOCK_MASK = ~(MAC_SUPER_BLOCK_SIZE-1);
+
+
+    MEE_DEBUG("CTR_SUPER_BLOCK_SIZE:\t" << CTR_SUPER_BLOCK_SIZE);    
+    MEE_DEBUG("MAC_SUPER_BLOCK_SIZE:\t" << MAC_SUPER_BLOCK_SIZE);
+
+
    current_cycle = 0;
    aes_pipeline = new Pipeline<uint64_t>(AES_STAGES);
 
    crypto_finalize_pipeline = new Pipeline<uint64_t>(CRYPTO_FINALIZE_CYCLES);
+
+
 
 
 

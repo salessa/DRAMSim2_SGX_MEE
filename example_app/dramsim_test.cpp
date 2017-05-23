@@ -10,12 +10,12 @@
 #define ERR_OUT(str)  std::cerr<< "\033[31m" << str <<endl << "\033[0m" << dec;
 
 
-#define REQ_CONT 1000
+#define REQ_CONT 2
 #define MIN_REQ_INTERVAL 1
 
 #define TEST_SINGLE false
-#define TEST_SEQ true
-#define TEST_RAND false
+#define TEST_SEQ false
+#define TEST_RAND true
 
 
 
@@ -24,7 +24,7 @@ uint64_t total_latency;
 /* callback functors */
 void some_object::read_complete(unsigned id, uint64_t address, uint64_t clock_cycle)
 {
-    //printf("[Callback] read complete: %d 0x%lx cycle=%lu\n", id, address, clock_cycle);
+    printf("[Callback] read complete: %d 0x%lx cycle=%lu\n", id, address, clock_cycle);
     assert(!stat_new && "Previous Stat Not Cleared");
 
     stat_new = true;
@@ -38,7 +38,7 @@ void some_object::read_complete(unsigned id, uint64_t address, uint64_t clock_cy
 
 void some_object::write_complete(unsigned id, uint64_t address, uint64_t clock_cycle)
 {
-    //printf("[Callback] write complete: %d 0x%lx cycle=%lu\n", id, address, clock_cycle);
+    printf("[Callback] write complete: %d 0x%lx cycle=%lu\n", id, address, clock_cycle);
 
     assert(!stat_new && "Previous Stat Not Cleared");
 
@@ -91,9 +91,10 @@ void some_object::check_stats(){
     for (auto i = sim_stats.begin(); i != sim_stats.end(); ++i) {
 
         bool completed = i->finished_cycle != 0;
+        char type = i->is_write ? 'w' : 'r';
 
         if(!completed){
-            ERR_OUT("Request not complted:\t0x" << hex << i->addr);
+            ERR_OUT("Request not complted:\t0x" << hex << i->addr << "\t" << type);
         }
 
     }
@@ -172,6 +173,8 @@ void some_object::test_sequential(MultiChannelMemorySystem *mem, unsigned count,
             stat.requested_cycle = current_cycles;
             cout << "requested @ cycle\t" << current_cycles << endl;
             stat.finished_cycle =  0;
+            stat.is_write = is_write;
+
 
             current_count++;
 
@@ -211,7 +214,7 @@ void some_object::test_rand(MultiChannelMemorySystem *mem, unsigned count, unsig
         addr = random() % 0x200000000L;
         addr = addr & ~0x3f; //align to 64B
 
-        is_write = false; //( random() % 2 == 0 );
+        is_write = ( random() % 2 == 0 );
 
         if(mem->willAcceptTransaction(addr) && current_count < count && 
            last_req_cycle + MIN_REQ_INTERVAL <= current_cycles ){
@@ -224,6 +227,8 @@ void some_object::test_rand(MultiChannelMemorySystem *mem, unsigned count, unsig
             
             stat.requested_cycle = current_cycles;
             stat.finished_cycle =  0;
+
+            stat.is_write = is_write;
 
             current_count++;
 
@@ -274,7 +279,7 @@ int main()
     
 
     
-    unsigned sim_cycles = 1000*REQ_CONT; //allow 1K cycles per request which is too much.
+    unsigned sim_cycles = 4000*REQ_CONT; //allow 1K cycles per request which is too much.
     
 
     some_object *obj;
