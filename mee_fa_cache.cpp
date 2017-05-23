@@ -90,7 +90,13 @@ void FACache::process_inputs(){
       //we put this in a wait buffer and process it later when data 
       //becomes available
       MEE_DEBUG("secondary_miss\t0x" << hex << address);
-      secodary_waits.push_back(*mshr_entry);
+
+      Request r = *mshr_entry;
+
+      r.is_write = writing;
+
+      secodary_waits.push_back(r);
+
     }
 
     //if its a new request, we send request to DRAM.
