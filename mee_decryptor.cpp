@@ -80,7 +80,7 @@ inline uint64_t Decryptor::get_MAC_address(uint64_t data_addr){
 
 inline uint64_t Decryptor::get_VER_address(uint64_t data_addr){
     data_addr = data_addr & VIRT_ADDR_MASK; 
-    uint64_t offset = (data_addr - DATA_REGION_START) /CTR_PER_CL;
+    uint64_t offset = (data_addr - DATA_REGION_START) /VER_PER_CL;
 
     return (VER_REGION_START + offset) & ~0x3f; 
 }
