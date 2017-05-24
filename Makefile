@@ -1,14 +1,36 @@
-CXXFLAGS=-DNO_STORAGE -Wall -DDEBUG_BUILD -std=c++0x  -O3
-#-DDEBUG_MEE
+CXXFLAGS=-DNO_STORAGE -Wall -DDEBUG_BUILD -std=c++0x 
 
-OPTFLAGS=  -g
 
+
+OPTFLAGS=  -g -O3
 
 ifdef DEBUG
 ifeq ($(DEBUG), 1)
 OPTFLAGS= -O0 -g
 endif
 endif
+
+
+ifdef DEBUG_MEE
+ifeq ($(DEBUG_MEE), 1)
+OPTFLAGS= -O0 -g -DDEBUG_MEE
+endif
+endif
+
+
+ifdef TETRIS
+ifeq ($(TETRIS), 1)
+OPTFLAGS+=-DTETRIS
+endif
+endif
+
+
+ifdef PMAC
+ifeq ($(PMAC), 1)
+OPTFLAGS+=-DPMAC
+endif
+endif
+
 CXXFLAGS+=$(OPTFLAGS)
 
 CXX=g++
