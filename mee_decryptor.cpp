@@ -5,18 +5,18 @@
 //we are not making these constants since
 //we want them to be configurable
 
-static unsigned CTR_SUPER_BLOCK_SIZE;
-static unsigned MAC_SUPER_BLOCK_SIZE;
+static uint64_t CTR_SUPER_BLOCK_SIZE;
+static uint64_t MAC_SUPER_BLOCK_SIZE;
 
-static unsigned MAC_SUPER_BLOCKS;
-static unsigned MAC_SUPER_BLOCK_MASK;
-
-
+static uint64_t MAC_SUPER_BLOCKS;
+static uint64_t MAC_SUPER_BLOCK_MASK;
 
 
 
-Decryptor::Decryptor(FACache *cache_, MEESystem *dram_, unsigned mac_super_block_size,
-    unsigned ctr_super_block_size):
+
+
+Decryptor::Decryptor(FACache *cache_, MEESystem *dram_, uint64_t mac_super_block_size,
+    uint64_t ctr_super_block_size):
   cache(cache_),dram(dram_),
   RequestTypeStr{"BLOCK", "MAC", "VER", "L0", "L1", "L2", "PATCH_BLOCK"}, 
   active_address(0),
