@@ -224,33 +224,23 @@ void MEESystem::init_sim_objects(){
 
 
 
-//=======================
-//these functions load MEE settings from environment variables
-
-unsigned read_from_env(const char* var_name, unsigned default_val){
-    
-    char *val = getenv(var_name);
-
-    if(val != NULL){
-        return unsigned( atoi(val) );
-    }
-
-    else{
-        return default_val;
-    }
-
-
-}
 
 void load_mee_config(){
 
+//these value are set during build
 
-    CTR_SUPER_BLOCK_SIZE = read_from_env("CTR_SUPER_BLOCK_SIZE", CTR_SUPER_BLOCK_SIZE);
+#ifdef CTR_SB
+    CTR_SUPER_BLOCK_SIZE = CTR_SB;
+#endif    
     
-    MAC_SUPER_BLOCK_SIZE = read_from_env("MAC_SUPER_BLOCK_SIZE", MAC_SUPER_BLOCK_SIZE);
 
-    CACHE_SIZE = read_from_env("MEE_CACHE_SIZE", CACHE_SIZE);
+#ifdef MAC_SB
+    MAC_SUPER_BLOCK_SIZE = MAC_SB;
+#endif    
 
+#ifdef MEE_CACHE
+    CACHE_SIZE = MEE_CACHE;
+#endif
     
 }
 

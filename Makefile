@@ -31,6 +31,20 @@ OPTFLAGS+=-DPMAC
 endif
 endif
 
+ifdef CTR_SB
+OPTFLAGS+=-DCTR_SB=$(CTR_SB)
+endif
+
+ifdef MAC_SB
+OPTFLAGS+=-DMAC_SB=$(MAC_SB)
+endif
+
+
+ifdef MEE_CACHE
+OPTFLAGS+=-DMEE_CACHE=$(MEE_CACHE)
+endif
+
+
 CXXFLAGS+=$(OPTFLAGS)
 
 CXX=g++
