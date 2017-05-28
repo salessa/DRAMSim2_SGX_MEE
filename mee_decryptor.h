@@ -81,6 +81,7 @@ private:
     queue<uint64_t> response_queue;
 
     queue<bool> output_write_flags;
+    queue<bool> write_flags;
 
     queue<uint64_t> cache_update_queue;
 
@@ -153,6 +154,7 @@ private:
     void request_extra_blocks();
     void process_patch_RW();
     void update_patch(uint64_t data_addr);
+    void merge_counters(uint64_t data_addr);
     bool send_data_req(bool is_write, uint64_t addr);
 
 
@@ -171,6 +173,29 @@ private:
     uint16_t active_requested_count;
 
     //*****************
+
+    //we are not storing all DRAM data in the mem simulator. 
+    //but we need to keep track of counter patching since it affects timing
+
+    struct CounterPatch{
+
+        //64 bit counter per 64B mem block. 
+        //we will not have a super block size of 64*64B(4KB), so this array is more than enough
+		uint64_t patches[64];
+
+		//1 bit per 64B mem block that indicates if counter for that element has been patched
+		bool patch_status[64];
+
+	};
+
+    //if a memory block's counter has been patched/branched, we will add it
+    //to this table, which is indxed by the address of the block address aligned 
+    //to the superblock size boundary
+    unordered_map<uint64_t, CounterPatch> counter_patch;
+
+
+    //*****************
+
 
 };
 

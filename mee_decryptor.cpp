@@ -11,6 +11,8 @@ static uint64_t MAC_SUPER_BLOCK_SIZE;
 static uint64_t MAC_SUPER_BLOCKS;
 static uint64_t MAC_SUPER_BLOCK_MASK;
 
+static uint64_t CTR_SUPER_BLOCK_MASK;
+
 
 
 
@@ -30,9 +32,12 @@ Decryptor::Decryptor(FACache *cache_, MEESystem *dram_, uint64_t mac_super_block
     MAC_SUPER_BLOCKS = MAC_SUPER_BLOCK_SIZE/64;
     MAC_SUPER_BLOCK_MASK = ~(MAC_SUPER_BLOCK_SIZE-1);
 
+    CTR_SUPER_BLOCK_MASK = ~(CTR_SUPER_BLOCK_SIZE-1);
 
     MEE_DEBUG("CTR_SUPER_BLOCK_SIZE:\t" << CTR_SUPER_BLOCK_SIZE);    
     MEE_DEBUG("MAC_SUPER_BLOCK_SIZE:\t" << MAC_SUPER_BLOCK_SIZE);
+
+    
 
 
    current_cycle = 0;
@@ -243,7 +248,7 @@ void Decryptor::finish_crypto(){
     //remove entry for this request
     //@@transactions.erase(addr); 
 
-    output_write_flags.push(is_write);
+    write_flags.push(is_write);
 
     transactions_status.erase( transactions_status.begin() + trans_idx );
     transactions_addr.erase( transactions_addr.begin() + trans_idx );
@@ -255,10 +260,65 @@ void Decryptor::finish_crypto(){
 }
 
 
+void Decryptor::merge_counters(uint64_t data_addr){
+    
+    uint64_t addr_aligned = data_addr & CTR_SUPER_BLOCK_MASK;
+    
+    bool is_identical = true;
+    for (unsigned i = 0; i < CTR_SUPER_BLOCK_SIZE/64-1; ++i){
+
+        is_identical = is_identical && 
+                        ( counter_patch[addr_aligned].patches[i] == counter_patch[addr_aligned].patches[i+1] );
+
+    }
+
+    if(is_identical){
+        
+        counter_patch.erase(addr_aligned);
+        MEE_DEBUG("mergeing_patches 0x" << hex << data_addr);
+
+        //TODO: collect stat
+        //patch_cnt -= num_grouped_blocks;
+        //merged_count+= num_grouped_blocks;
+	}
+    
+
+}
+
+
 void Decryptor::update_patch(uint64_t data_addr){
 
-    //TODO: integrate code from size study
+    uint64_t addr_aligned = data_addr & CTR_SUPER_BLOCK_MASK;
 
+    //we are branching out the counter for the first time
+    if( !is_patched(data_addr) ){
+
+        CounterPatch p;
+        //HACK: since we are not properly tracking counters, we will simply initialize all of them
+        //to a single value. since a 64 bit (or 56 bit) counter will not overflow, this 
+        //will work fine.
+
+        for (unsigned i = 0; i < CTR_SUPER_BLOCK_SIZE/64-1; ++i)
+        {
+            p.patches[i] = 1;
+        }
+
+        counter_patch[addr_aligned] = p;
+
+        MEE_DEBUG("new_patch: 0x" << hex << addr_aligned << "\t0x" << hex << data_addr);
+
+    }
+
+
+    unsigned block_idx =  ( data_addr & (CTR_SUPER_BLOCK_SIZE-1) )/CTR_SUPER_BLOCK_SIZE ;
+
+    //we increment the counter for the block that was must updated
+    counter_patch[addr_aligned].patches[block_idx]++;
+    MEE_DEBUG("update_patch: 0x" << hex << data_addr);
+
+    //we check if the counter can be merged
+    merge_counters(data_addr);
+    
 }
 
 //when a read request returns from memory, we use this function to figure out
@@ -730,8 +790,14 @@ void Decryptor::read_response(){
 bool Decryptor::is_patched(uint64_t address){
 
 #ifdef TETRIS    
-    //TODO: enable simulation with a) everything patched, b) axing enabled & re-encryption enabled
-    return true;
+    uint64_t addr_aligned = address & CTR_SUPER_BLOCK_MASK;
+
+    MEE_DEBUG("check_patch: 0x" << hex << addr_aligned << "\t0x" << hex << address);
+
+    //if a counter is not branched/patched, we do not keep track of it.
+    //so just checking it is in the table is sufficient 
+    return counter_patch.count(addr_aligned) > 0;	
+    
 #else
     return false;
 #endif
@@ -766,15 +832,16 @@ void Decryptor::process_response(){
     //for the regular MEE implementation, is_patched will always return false.
     //so this same code can be used in both types of simulations
 
-    if( type == VER && is_patched(addr) ) {
+    //get data address
+    auto entry = outstanding_metadata_reads.find(addr);
+    uint64_t data_addr = entry->second;
+    if( type == VER && is_patched(data_addr) ) {
         //if the block is patched, it means the VER value is a pointer, not an actual counter;
         //so we fetch the value that is pointed to.
         uint64_t patch_addr = get_patch_addr(addr);
         patch_request_queue.push(patch_addr);
 
-        //get data address
-        auto entry = outstanding_metadata_reads.find(addr);
-        uint64_t data_addr = entry->second;
+    
 
         //we are done processing the VER
         outstanding_metadata_reads.erase( entry );
@@ -844,6 +911,8 @@ void Decryptor::process_final_pipeline(){
         MEE_DEBUG("done_processing\t0x" << hex << output);
        
         output_queue.push(output);
+        output_write_flags.push( write_flags.front() ) ;
+        write_flags.pop();
     }
 
     //if we have pending writes to the caches...
@@ -982,9 +1051,10 @@ uint64_t Decryptor::get_output(){
 
 bool Decryptor::output_is_write(){
 
-    if(output_queue.empty()) return false;
+    if(output_write_flags.empty()) return false;
 
-    auto ret = output_write_flags.front();
+    bool ret = output_write_flags.front();
+    MEE_DEBUG("is_write_ret:" << ret);
     return ret;
 
 
