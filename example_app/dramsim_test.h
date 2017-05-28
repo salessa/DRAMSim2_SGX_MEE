@@ -48,6 +48,9 @@ class some_object
         some_object(){
             stat_new = false;
         }
+        ~some_object(){
+            delete mem;
+        }
 
 		void read_complete(unsigned, uint64_t, uint64_t);
 		void write_complete(unsigned, uint64_t, uint64_t);

@@ -10,16 +10,20 @@
 #define ERR_OUT(str)  std::cerr<< "\033[31m" << str <<endl << "\033[0m" << dec;
 
 
-#define REQ_CONT 2
-#define MIN_REQ_INTERVAL 1
+#define REQ_CONT 100
+#define MIN_REQ_INTERVAL 300
 
 #define TEST_SINGLE false
-#define TEST_SEQ false
-#define TEST_RAND true
+#define TEST_SEQ true
+#define TEST_RAND false
 
 
 
 uint64_t total_latency;
+
+TransactionCompleteCB *read_cb;
+TransactionCompleteCB *write_cb;
+
 
 /* callback functors */
 void some_object::read_complete(unsigned id, uint64_t address, uint64_t clock_cycle)
@@ -51,6 +55,8 @@ void some_object::write_complete(unsigned id, uint64_t address, uint64_t clock_c
 
 
 }
+
+
 
 /* FIXME: this may be broken, currently */
 void power_callback(double a, double b, double c, double d)
@@ -108,9 +114,13 @@ void some_object::check_stats(){
 void some_object::test_single(MultiChannelMemorySystem *mem){
 
     bool is_write = false;
-    uint64_t addr = 0x327b23c0; //0x300000UL;
+    uint64_t addr = 0x300000UL;
 
     unsigned cycles = 4000;
+
+
+
+    cout << "is_write:" << is_write << endl;
 
     assert(mem->addTransaction(is_write, addr) && "ADD Failed");
 
@@ -119,12 +129,9 @@ void some_object::test_single(MultiChannelMemorySystem *mem){
     
     stat.requested_cycle = 1;
     stat.finished_cycle =  0;
+    stat.is_write = is_write;
 
     sim_stats.push_back(stat);
-
-    mem->update();
-    mem->update();
-    mem->update();
 
     // mem->addTransaction(is_write, addr);
 
@@ -140,8 +147,8 @@ void some_object::test_single(MultiChannelMemorySystem *mem){
 
 
     for (int i = 0; i < cycles; ++i){
-        //capture_stat();
         mem->update();
+        current_cycles++;
     }
 
 }
@@ -162,6 +169,8 @@ void some_object::test_sequential(MultiChannelMemorySystem *mem, unsigned count,
 
         if(mem->willAcceptTransaction(addr) && current_count < count &&
             last_req_cycle + MIN_REQ_INTERVAL <= current_cycles  ){
+
+            is_write = ~is_write; //( random() % 2 == 0 );
 
             assert(mem->addTransaction(is_write, addr) && "Add failed");
 
@@ -258,8 +267,8 @@ some_object* create_new_sys(){
     some_object *obj = new some_object();
 
     //todo: delte these objects in destructor
-    TransactionCompleteCB *read_cb = new Callback<some_object, void, unsigned, uint64_t, uint64_t>(obj, &some_object::read_complete);
-    TransactionCompleteCB *write_cb = new Callback<some_object, void, unsigned, uint64_t, uint64_t>(obj, &some_object::write_complete);
+    read_cb = new Callback<some_object, void, unsigned, uint64_t, uint64_t>(obj, &some_object::read_complete);
+    write_cb = new Callback<some_object, void, unsigned, uint64_t, uint64_t>(obj, &some_object::write_complete);
 
     obj->mem = getMemorySystemInstance("ini/DDR3_micron_32M_8B_x4_sg125.ini", "system.ini", "..", "example_app", 16384);     
 
@@ -324,8 +333,6 @@ int main()
 
         obj->test_rand(obj->mem, REQ_CONT, sim_cycles );
         obj->check_stats();
-
-        cout << "Stalled Cycles:\t" << obj->stalled_cycles << endl;
 
 
         cout << "Average Latency RAND: " << total_latency/REQ_CONT << endl;
