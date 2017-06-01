@@ -31,7 +31,7 @@ const unsigned REQUESTS_PER_BLOCK = 8;
 class Decryptor: public SimObject{
     
 public:
-    Decryptor(FACache *cache_, MEESystem* dram_, uint64_t, uint64_t);
+    Decryptor(FACache *cache_, FACache *prefetch_buff_, MEESystem* dram_, uint64_t, uint64_t);
 
     bool can_accept_input();
     bool is_output_ready();
@@ -47,6 +47,7 @@ public:
     
 private:
     FACache *cache;
+    FACache *prefetch_buff;
     MEESystem* dram;
 
     typedef enum RequestFlag_{

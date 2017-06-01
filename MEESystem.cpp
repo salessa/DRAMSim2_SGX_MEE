@@ -208,12 +208,20 @@ void MEESystem::init_sim_objects(){
 	//on-chip fully associative SRAM cache
     //on a miss, sends DRAM requests
     crypto_cache = new FACache(this, CACHE_SIZE, CACHE_ACCESS_CYCLES);
-
     simObjects.push_back(crypto_cache);
+
+#ifdef PMAC
+    //store all extra blocks fetched for MAC checks in this buffer. 
+    prefetch_buffer = new FACache(this, 1024, CACHE_ACCESS_CYCLES);
+    simObjects.push_back(prefetch_buffer);
+#else
+    //TODO: also add next N like prefetching in baseline?
+    prefetch_buffer = NULL;    
+#endif
 
 	//encryption/decryption pipeline:
     //requests are sent to the crypto cache. 
-	decryptor = new Decryptor(crypto_cache, this, 
+	decryptor = new Decryptor(crypto_cache, prefetch_buffer, this, 
                               MAC_SUPER_BLOCK_SIZE, CTR_SUPER_BLOCK_SIZE);
 
 	simObjects.push_back( (SimObject*) decryptor);

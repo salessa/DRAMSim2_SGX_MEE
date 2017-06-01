@@ -17,9 +17,9 @@ static uint64_t CTR_SUPER_BLOCK_MASK;
 
 
 
-Decryptor::Decryptor(FACache *cache_, MEESystem *dram_, uint64_t mac_super_block_size,
+Decryptor::Decryptor(FACache *cache_, FACache *prefetch_buff_, MEESystem *dram_, uint64_t mac_super_block_size,
     uint64_t ctr_super_block_size):
-  cache(cache_),dram(dram_),
+  cache(cache_), prefetch_buff(prefetch_buff_), dram(dram_),
   RequestTypeStr{"BLOCK", "MAC", "VER", "L0", "L1", "L2", "PATCH_BLOCK"}, 
   active_address(0),
   active_is_write(false),
@@ -359,11 +359,28 @@ Decryptor::RequestFlag Decryptor::get_block_type(uint64_t type){
 
 bool Decryptor::send_data_req(bool is_write, uint64_t addr){
     
-#ifndef PMAC
+
+#ifdef PMAC    
+
+//if PMAC scheme is defined, all read requests have to go through the prefetch buffer
+//NOTE: we are not telling the prefetch buffer to search and update data on a write.
+if(is_write){
     return send_dram_req(is_write, addr);
+}
+else{
+
+    if(prefetch_buff->can_accept_input()){
+        prefetch_buff->add_input(is_write, addr);
+        return true;
+    }
+
+    return false;
+
+}
 
 #else 
-    //TODO: send request to a direct mapped cache
+
+    //if PMAC scheme is not enabled, everything goes directly to DRAM
     return send_dram_req(is_write, addr);    
 
 #endif
@@ -776,6 +793,14 @@ void Decryptor::read_response(){
             MEE_DEBUG("dram->queue\t0x" << hex << addr);
         }
     }
+
+#ifdef PMAC
+    if(prefetch_buff->is_output_ready()){
+        uint64_t addr = prefetch_buff->get_output();
+        MEE_DEBUG("prefetch-buff->queue\t0x" << hex << addr);
+        response_queue.push(addr);
+    }    
+#endif
 
 
     if(cache->is_output_ready()){

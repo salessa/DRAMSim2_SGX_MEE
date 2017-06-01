@@ -80,6 +80,7 @@ private:
     queue<uint64_t>	channelResponse;
 
 	FACache* crypto_cache;
+	FACache* prefetch_buffer;
 	Decryptor* decryptor;
 	//Encryptor* encryptor;
 	
