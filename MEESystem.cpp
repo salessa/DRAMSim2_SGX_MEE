@@ -3,7 +3,7 @@
 #include <sstream>
 #include <fstream>
 
-
+#define SPLIT_CTR_STAT
 
 //we are not making these constants since
 //we want them to be configurable
@@ -108,7 +108,7 @@ void power_callback(double a, double b, double c, double d)
 }
 
 
-MEESystem::MEESystem(MultiChannelMemorySystem *mem_sys_): mem_sys(mem_sys_), current_cycle(0){
+MEESystem::MEESystem(MultiChannelMemorySystem *mem_sys_, ostream &dramsim_log_): mem_sys(mem_sys_), dramsim_log(dramsim_log_), current_cycle(0){
 
 
     
@@ -230,7 +230,20 @@ void MEESystem::init_sim_objects(){
 }
 
 
+void MEESystem::printStats(bool final_stats){
 
+#ifdef TETRIS
+    PRINT( "Branch Size (bytes)" << decryptor->get_branch_bytes() ); 
+    PRINT( "Merges " <<  decryptor->get_merge_count() ) ;
+#endif
+
+#ifdef SPLIT_CTR_STAT
+    PRINT( "Split CTR Re-encryptions " << decryptor->get_split_ctr_encryptions() ); 
+#endif
+
+    PRINT("Working Set (bytes)" << decryptor->get_working_set_bytes() );
+
+}
 
 
 void load_mee_config(){

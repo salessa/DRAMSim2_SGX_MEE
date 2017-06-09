@@ -101,7 +101,7 @@ MultiChannelMemorySystem::MultiChannelMemorySystem(const string &deviceIniFilena
 		channels.push_back(channel);
 	}
 
-	mem_enc_engine = new MEESystem(this);
+    mem_enc_engine = new MEESystem(this, dramsim_log);
 
 }
 /* Initialize the ClockDomainCrosser to use the CPU speed 
@@ -394,6 +394,10 @@ void MultiChannelMemorySystem::actual_update()
 		{
 			channels[i]->printStats(false); 
 		}
+
+		//print stats associated with MEE
+		mem_enc_engine->printStats(false);
+
 		csvOut->finalize();
 	}
 	

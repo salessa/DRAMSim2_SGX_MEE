@@ -35,7 +35,7 @@ public:
 	bool willAcceptTransaction();
 	void tick();
 
-	MEESystem(MultiChannelMemorySystem *mem_sys_ );
+	MEESystem(MultiChannelMemorySystem *mem_sys_, ostream &dramsim_log_ );
 	~MEESystem();
 
 
@@ -44,8 +44,12 @@ public:
 	bool send_dram_req(bool is_write, uint64_t addr);
 	bool can_accept_dram_req(uint64_t addr);
 
+    void printStats(bool final_stats);
+
 
 private:
+    ostream &dramsim_log;
+
 	//vector<MemorySystem*> channels;
 	MultiChannelMemorySystem *mem_sys;
 	TransactionCompleteCB *readDone, *writeDone;

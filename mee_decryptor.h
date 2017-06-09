@@ -43,6 +43,12 @@ public:
     //inherited
     void tick() ;
     bool exit_sim() ;
+
+    //used for printing stats every epoch
+    uint64_t get_branch_bytes();
+    uint64_t get_split_ctr_encryptions();
+    uint64_t get_working_set_bytes();
+    uint64_t get_merge_count();
     
     
 private:
@@ -196,6 +202,13 @@ private:
 
 
     //*****************
+    //track the number of times each touched memory block is accessed
+    //used for computing stats
+    unordered_map<uint64_t, uint64_t>  mem_block_accesses;
+
+    uint64_t counter_merges;
+
+
 
 
 };

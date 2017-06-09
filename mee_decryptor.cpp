@@ -13,6 +13,7 @@ static uint64_t MAC_SUPER_BLOCK_MASK;
 
 static uint64_t CTR_SUPER_BLOCK_MASK;
 
+static uint64_t BRANCH_CTRS_PER_BLOCK;
 
 
 
@@ -36,6 +37,19 @@ Decryptor::Decryptor(FACache *cache_, FACache *prefetch_buff_, MEESystem *dram_,
 
     MEE_DEBUG("CTR_SUPER_BLOCK_SIZE:\t" << CTR_SUPER_BLOCK_SIZE);    
     MEE_DEBUG("MAC_SUPER_BLOCK_SIZE:\t" << MAC_SUPER_BLOCK_SIZE);
+
+    //consts used for computing size of branch entries====
+    //compute some constants associated with size of counter branch entries
+
+    unsigned counters_per_branch =  CTR_SUPER_BLOCK_SIZE/64; //1 counter per block
+    unsigned ctr_bits_per_branch = counters_per_branch*CTR_BITS;
+
+    //each cache line will store a MAC value for that memory block.
+    //So the space we have for storing counters is 512 bits - MAC_BITS
+    BRANCH_CTRS_PER_BLOCK = ctr_bits_per_branch/(512 - MAC_BITS );
+
+    //===
+
 
     
 
@@ -276,6 +290,8 @@ void Decryptor::merge_counters(uint64_t data_addr){
         
         counter_patch.erase(addr_aligned);
         MEE_DEBUG("mergeing_patches 0x" << hex << data_addr);
+
+        counter_merges++;
 
         //TODO: collect stat
         //patch_cnt -= num_grouped_blocks;
@@ -1041,6 +1057,17 @@ bool Decryptor::add_input(bool is_write, uint64_t address){
 
     assert( get_block_type(address) == BLOCK && "Address space partitioning not correct");
 
+    //we need to track per-block accesses to compute some stats
+
+    //create entry if it's first access
+    if(mem_block_accesses.count(address) == 0){
+        mem_block_accesses[address] = 0;
+    }
+
+    mem_block_accesses[address]++;
+
+
+
     return true;
 
 }
@@ -1089,4 +1116,53 @@ bool Decryptor::exit_sim() {
 
     return false;
 
+}
+
+uint64_t Decryptor::get_branch_bytes(){
+
+    //number of blocks occupied by counters + MAC for branches
+    uint64_t total_branch_blocks = counter_patch.size()/BRANCH_CTRS_PER_BLOCK;
+
+    //total memory space allocated for storing counter branches
+    uint64_t total_branch_bytes = total_branch_blocks*64;
+
+
+    return total_branch_bytes;
+
+}
+
+
+uint64_t Decryptor::get_split_ctr_encryptions(){
+
+    //go through all the accesses and calculate re-encryptions
+    
+
+    uint64_t encryptions = 0;
+
+    for (auto iter : mem_block_accesses) {
+
+        uint64_t access_count = iter.second;
+
+        //we assume a 7-bit counter as per the original paper, 
+        //hence we assume 1 re-encryption every 128-accesses
+        
+        encryptions += access_count/128; //integer div = floor function
+
+    }
+
+    return encryptions;
+
+
+}
+
+uint64_t Decryptor::get_working_set_bytes(){
+
+    return mem_block_accesses.size() * 64;
+
+
+}
+
+
+uint64_t Decryptor::get_merge_count(){
+    return counter_merges;
 }
