@@ -25,7 +25,7 @@ using namespace std;
 
 
 //mem block, MAC, ctr, L0, L1, L2
-const unsigned REQUESTS_PER_BLOCK = 8;
+const unsigned REQUESTS_PER_BLOCK = 11;
 
 
 class Decryptor: public SimObject{
@@ -57,7 +57,7 @@ private:
     MEESystem* dram;
 
     typedef enum RequestFlag_{
-        BLOCK=0, MAC, VER, L0, L1, L2, PATCH_BLOCK, BLOCK_EXTRA,
+        BLOCK=0, MAC, VER, L0, L1, L2, L3, L4, L5, PATCH_BLOCK, BLOCK_EXTRA,
         WRITE_FLAG
     }RequestFlag;
 
@@ -155,6 +155,9 @@ private:
     uint64_t get_L0_address(uint64_t data_addr);
     uint64_t get_L1_address(uint64_t data_addr);
     uint64_t get_L2_address(uint64_t data_addr);
+    uint64_t get_L3_address(uint64_t data_addr);
+    uint64_t get_L4_address(uint64_t data_addr);
+    uint64_t get_L5_address(uint64_t data_addr);
 
     bool is_patched(uint64_t address);
     uint64_t get_patch_addr(uint64_t ver_address);
@@ -163,6 +166,9 @@ private:
     void update_patch(uint64_t data_addr);
     void merge_counters(uint64_t data_addr);
     bool send_data_req(bool is_write, uint64_t addr);
+
+    void fetch_ctr_node(RequestFlag current_node, RequestFlag next_node, uint64_t node_addr, uint64_t data_addr, bool last_node);  
+
 
 
     //*****************

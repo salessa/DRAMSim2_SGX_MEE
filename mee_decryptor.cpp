@@ -21,7 +21,7 @@ static uint64_t BRANCH_CTRS_PER_BLOCK;
 Decryptor::Decryptor(FACache *cache_, FACache *prefetch_buff_, MEESystem *dram_, uint64_t mac_super_block_size,
     uint64_t ctr_super_block_size):
   cache(cache_), prefetch_buff(prefetch_buff_), dram(dram_),
-  RequestTypeStr{"BLOCK", "MAC", "VER", "L0", "L1", "L2", "PATCH_BLOCK"}, 
+  RequestTypeStr{"BLOCK", "MAC", "VER", "L0", "L1", "L2", "L3", "L4", "L5", "PATCH_BLOCK"}, 
   active_address(0),
   active_is_write(false),
   request_is_active(false) {
@@ -120,6 +120,24 @@ inline uint64_t Decryptor::get_L2_address(uint64_t data_addr){
     data_addr = data_addr & VIRT_ADDR_MASK; 
     uint64_t offset = (data_addr - DATA_REGION_START)/std::pow(CTR_PER_CL, 4);
     return (L2_REGION_START + offset) & ~0x3f; 
+}
+
+inline uint64_t Decryptor::get_L3_address(uint64_t data_addr){
+    data_addr = data_addr & VIRT_ADDR_MASK; 
+    uint64_t offset = (data_addr - DATA_REGION_START)/std::pow(CTR_PER_CL, 5);
+    return (L3_REGION_START + offset) & ~0x3f; 
+}
+
+inline uint64_t Decryptor::get_L4_address(uint64_t data_addr){
+    data_addr = data_addr & VIRT_ADDR_MASK; 
+    uint64_t offset = (data_addr - DATA_REGION_START)/std::pow(CTR_PER_CL, 6);
+    return (L4_REGION_START + offset) & ~0x3f; 
+}
+
+inline uint64_t Decryptor::get_L5_address(uint64_t data_addr){
+    data_addr = data_addr & VIRT_ADDR_MASK; 
+    uint64_t offset = (data_addr - DATA_REGION_START)/std::pow(CTR_PER_CL, 7);
+    return (L5_REGION_START + offset) & ~0x3f; 
 }
 
 
@@ -361,6 +379,19 @@ Decryptor::RequestFlag Decryptor::get_block_type(uint64_t type){
         return L2;
     }
 
+
+    if(type >= L3_REGION_START && type <= (L3_REGION_START + L3_REGION_SIZE)){
+        return L3;
+    }
+
+    if(type >= L4_REGION_START && type <= (L4_REGION_START + L4_REGION_SIZE)){
+        return L4;
+    }
+
+    if(type >= L5_REGION_START && type <= (L5_REGION_START + L5_REGION_SIZE)){
+        return L5;
+    }
+
     if(type >= PATCH_REGION_START && type <= (PATCH_REGION_START + PATCH_REGION_SIZE)){
         return PATCH_BLOCK;
     }
@@ -459,6 +490,44 @@ void Decryptor::request_extra_blocks(){
 
 }
 
+void Decryptor::fetch_ctr_node(RequestFlag current_node, RequestFlag next_node, uint64_t node_addr, uint64_t data_addr, bool last_node){
+
+
+        //if we fail to add request to ctr cache, do nothing
+        if (! send_cache_req(false, node_addr) ){
+            return;
+        }
+
+
+        //if this is the last ctr node, we proceed to fetch the MAC
+        if(last_node){
+
+#ifdef PMAC   
+                //in our scheme, we need to read the MAC for both reads and writes
+                active_request_status = MAC;
+#else
+                //in the base line scheme, we will simply compute a new MAC
+                if(active_is_write) request_is_active = false; // we are done!
+                else active_request_status = MAC; //go fetch the MAC
+#endif
+
+
+        }
+
+        else{
+            active_request_status = next_node;
+        }
+                
+        outstanding_metadata_reads.insert(
+        make_pair(node_addr, data_addr) );
+
+        MEE_DEBUG(RequestTypeStr[current_node] << " req \t0x" << hex << node_addr << "\t0x" << hex << data_addr);
+            
+}
+
+
+
+
 
 
 //generate DRAM requests (data, MAC, CTR, ...) for a secure read/write request.
@@ -473,6 +542,7 @@ void Decryptor::process_active(){
 
 
     uint64_t addr;
+    bool is_last_ctr_req;
 
     //this implements a state machine. 
     //we begin by request a BLOCK in the first cycle
@@ -527,50 +597,59 @@ void Decryptor::process_active(){
             }
             break;
             
-        case(L0):
-                
+        case L0:
             addr = get_L0_address(active_address);
-            if(send_cache_req(false, addr)){
-                active_request_status = L1;
-                
-                outstanding_metadata_reads.insert(
-                    make_pair(addr, active_address) );
-
-                MEE_DEBUG("L0 req\t0x" << hex << addr << "\t0x" << hex << active_address);
-            }
-            break;
-
-        case(L1):
-                
-            addr = get_L1_address(active_address);
-            if(send_cache_req(false, addr)){
-                active_request_status = L2;
-                
-                outstanding_metadata_reads.insert(
-                    make_pair(addr, active_address) );
-
-                MEE_DEBUG("L1 req\t0x" << hex << addr << "\t0x" << hex << active_address);
-            }
-            break;
-
-        case(L2):
-            addr = get_L2_address(active_address);
-            if(send_cache_req(false, addr)){
-                
-#ifdef PMAC   
-                //in our scheme, we need to read the MAC for both reads and writes
-                active_request_status = MAC;
+#ifdef FETCH_L1
+            is_last_ctr_req = false;
 #else
-                //in the base line scheme, we will simply compute a new MAC
-                if(active_is_write) request_is_active = false; // we are done!
-                else active_request_status = MAC; //go fetch the MAC
+            is_last_ctr_req = true;
 #endif
-                
-                outstanding_metadata_reads.insert(
-                    make_pair(addr, active_address) );
+            fetch_ctr_node(L0, L1 ,addr, active_address, is_last_ctr_req);
+            break;
 
-                MEE_DEBUG("L2 req\t0x" << hex << addr << "\t0x" << hex << active_address);
-            }
+        case L1:
+            addr = get_L1_address(active_address);
+#ifdef FETCH_L2
+            is_last_ctr_req = false;
+#else
+            is_last_ctr_req = true;
+#endif
+            fetch_ctr_node(L1, L2 ,addr, active_address, is_last_ctr_req);
+            break;
+
+        case L2:
+            addr = get_L2_address(active_address);
+#ifdef FETCH_L3
+            is_last_ctr_req = false;
+#else
+            is_last_ctr_req = true;
+#endif
+            fetch_ctr_node(L2, L3 ,addr, active_address, is_last_ctr_req);        
+            break;
+
+        case L3:
+            addr = get_L3_address(active_address);
+#ifdef FETCH_L4
+            is_last_ctr_req = false;
+#else
+            is_last_ctr_req = true;
+#endif
+            fetch_ctr_node(L3, L4 ,addr, active_address, is_last_ctr_req);
+            break;
+
+        case L4:
+            addr = get_L4_address(active_address);
+#ifdef FETCH_L5
+            is_last_ctr_req = false;
+#else
+            is_last_ctr_req = true;
+#endif
+            fetch_ctr_node(L4, L5 ,addr, active_address, is_last_ctr_req);
+            break;
+
+        case L5: //we do not support a tree with a depth of more than 6
+            addr = get_L5_address(active_address);
+            fetch_ctr_node(L5, MAC ,addr, active_address, true);
             break;
 
         default:
@@ -761,12 +840,34 @@ void Decryptor::update_status(uint64_t addr){
         
         //check if that request has all what it needs and 
         //start decryption/re-encryption
-        bool ready = transactions_status[trans_idx].test(L2) &&
-                     transactions_status[trans_idx].test(L1) &&
-                     transactions_status[trans_idx].test(L0) &&
-                     transactions_status[trans_idx].test(MAC) &&
+        bool ready = transactions_status[trans_idx].test(MAC) &&
                      transactions_status[trans_idx].test(VER)  && //this will be ready when either branched ctr or VER is read.
-                     transactions_status[trans_idx].test(BLOCK);
+                     transactions_status[trans_idx].test(BLOCK) &&
+                     transactions_status[trans_idx].test(L0);
+
+#ifdef FETCH_L1
+        ready = ready && transactions_status[trans_idx].test(L1);
+#endif
+
+#ifdef FETCH_L2
+        ready = ready && transactions_status[trans_idx].test(L2);
+#endif
+
+#ifdef FETCH_L3
+        ready = ready && transactions_status[trans_idx].test(L3);
+#endif
+
+#ifdef FETCH_L4
+        ready = ready && transactions_status[trans_idx].test(L4);
+#endif
+
+#ifdef FETCH_L5
+        ready = ready && transactions_status[trans_idx].test(L5);
+#endif
+
+
+                     
+                     
 
 #ifdef PMAC
         //when using PMACs, we also need to wait until all data blocks 
@@ -917,7 +1018,7 @@ void Decryptor::process_response(){
     
     //counters from L0, L1, L2 are used to mask the MAC (not for encryption/decryption)
     //so we only need 1 block
-    else if (type == L0 || type == L1 || type == L2  ){
+    else if (type == L0 || type == L1 || type == L2 || type == L3 || type == L4 || type==L5 ){
 
         MEE_DEBUG("AES Start\t0x" << hex << addr);
         aes_input_queue.push(addr);

@@ -17,6 +17,7 @@ OPTFLAGS= -O0 -g -DDEBUG_MEE
 endif
 endif
 
+OPTFLAGS+=$(FLAGS)
 
 ifdef TETRIS
 ifeq ($(TETRIS), 1)
