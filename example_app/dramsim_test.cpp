@@ -5,18 +5,21 @@
 #include "dramsim_test.h"
 #include <cassert>
 #include <cstdlib>
+#include <vector>
+
+using namespace std;
 
 
 #define ERR_OUT(str)  std::cerr<< "\033[31m" << str <<endl << "\033[0m" << dec;
 
 
-#define REQ_CONT 100
-#define MIN_REQ_INTERVAL 300
+#define REQ_CONT 1
+#define MIN_REQ_INTERVAL 10
 
 #define TEST_SINGLE false
-#define TEST_SEQ true
+#define TEST_SEQ false
 #define TEST_RAND false
-
+#define TEST_TRACE true
 
 
 uint64_t total_latency;
@@ -24,6 +27,33 @@ uint64_t total_latency;
 TransactionCompleteCB *read_cb;
 TransactionCompleteCB *write_cb;
 
+
+void gen_access_stream(){
+
+    //write to same address multiple times to
+    //trigger split counter re-encryption 
+    MemAccess_ access;
+    // for (int i = 0; i < 600; ++i)
+    // {
+
+    //     access.address = 0x300000UL;
+    //     access.is_write = true;
+
+    //     access_stream.push_back(access);
+    // }
+
+    //write to sequential addresses to trigger merge
+    for (int i = 0; i < 500; ++i)
+    {
+        access.address = 0x300000UL + 64*i;
+        access.is_write = true;
+
+        access_stream.push_back(access);
+
+    }
+
+
+}
 
 /* callback functors */
 void some_object::read_complete(unsigned id, uint64_t address, uint64_t clock_cycle)
@@ -170,7 +200,7 @@ void some_object::test_sequential(MultiChannelMemorySystem *mem, unsigned count,
         if(mem->willAcceptTransaction(addr) && current_count < count &&
             last_req_cycle + MIN_REQ_INTERVAL <= current_cycles  ){
 
-            is_write = ~is_write; //( random() % 2 == 0 );
+            is_write = false; //~is_write; //( random() % 2 == 0 );
 
             assert(mem->addTransaction(is_write, addr) && "Add failed");
 
@@ -205,6 +235,50 @@ void some_object::test_sequential(MultiChannelMemorySystem *mem, unsigned count,
 
 
 }
+
+void some_object::test_trace(MultiChannelMemorySystem *mem, vector<MemAccess_> accesses , unsigned cycles){
+
+
+
+    unsigned last_req_cycle=0;
+    unsigned current_count = 0;
+
+    while(current_cycles < cycles ){
+        current_cycles++;
+
+        if(mem->willAcceptTransaction(accesses[current_count].address) && current_count < accesses.size() &&
+            last_req_cycle + MIN_REQ_INTERVAL <= current_cycles  ){
+
+            assert(mem->addTransaction(accesses[current_count].is_write, accesses[current_count].address) && "Add failed");
+
+            last_req_cycle = current_cycles;
+
+            RequestStat stat;
+            stat.addr = accesses[current_count].address;
+            
+            stat.requested_cycle = current_cycles;
+            cout << "requested @ cycle\t" << current_cycles << endl;
+            stat.finished_cycle =  0;
+            stat.is_write = accesses[current_count].is_write;
+
+
+            current_count++;
+
+            sim_stats.push_back(stat);
+
+        }
+        else{
+            if(current_count < REQ_CONT) stalled_cycles++;
+        }
+
+        //capture_stat();
+        mem->update();
+
+    }
+
+}
+
+
 
 void some_object::test_rand(MultiChannelMemorySystem *mem, unsigned count, unsigned cycles){
 
@@ -340,6 +414,21 @@ int main()
 
 
 
+    if(TEST_TRACE){
+        cout << "\n*********************************TEST Trace******************************************" << endl;
+        
+        gen_access_stream();
+        obj = create_new_sys();
+        //obj->mem->RegisterCallbacks(read_cb, write_cb, power_callback);
+        
+        sim_cycles = 4000*access_stream.size();
+        obj->test_trace(obj->mem, access_stream, sim_cycles );
+        obj->check_stats();
+
+
+        cout << "Average Latency Trace: " << total_latency/REQ_CONT << endl;
+
+    }
 
 
 

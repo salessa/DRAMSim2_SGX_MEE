@@ -41,6 +41,13 @@ using namespace std;
 
 using namespace DRAMSim;
 
+struct MemAccess_{
+    uint64_t address;
+    bool is_write;
+};
+
+vector<MemAccess_> access_stream;
+
 
 class some_object
 {
@@ -54,6 +61,8 @@ class some_object
 
 		void read_complete(unsigned, uint64_t, uint64_t);
 		void write_complete(unsigned, uint64_t, uint64_t);
+        void test_trace(MultiChannelMemorySystem *mem, vector<MemAccess_> accesses , unsigned cycles);
+
 
         bool stat_new;
         unsigned stat_cycle;

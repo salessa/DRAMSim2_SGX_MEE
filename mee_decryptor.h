@@ -208,9 +208,12 @@ private:
 
 
     //*****************
-    //track the number of times each touched memory block is accessed
+    //track the number of times each touched memory block is read and written
     //used for computing stats
     unordered_map<uint64_t, uint64_t>  mem_block_accesses;
+
+    //tracks number of writes
+    unordered_map<uint64_t, uint64_t>  mem_block_writes;
 
     uint64_t counter_merges;
 

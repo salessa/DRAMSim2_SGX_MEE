@@ -33,7 +33,7 @@ Decryptor::Decryptor(FACache *cache_, FACache *prefetch_buff_, MEESystem *dram_,
     MAC_SUPER_BLOCKS = MAC_SUPER_BLOCK_SIZE/64;
     MAC_SUPER_BLOCK_MASK = ~(MAC_SUPER_BLOCK_SIZE-1);
 
-    CTR_SUPER_BLOCK_MASK = ~(CTR_SUPER_BLOCK_SIZE-1);
+//    CTR_SUPER_BLOCK_MASK = ~(CTR_SUPER_BLOCK_SIZE-1);
 
     MEE_DEBUG("CTR_SUPER_BLOCK_SIZE:\t" << CTR_SUPER_BLOCK_SIZE);    
     MEE_DEBUG("MAC_SUPER_BLOCK_SIZE:\t" << MAC_SUPER_BLOCK_SIZE);
@@ -270,6 +270,7 @@ void Decryptor::finish_crypto(){
 
 #ifdef TETRIS
         //we need to update the patch status
+        MEE_DEBUG("update called");
         update_patch(addr);
 #endif
 
@@ -292,9 +293,16 @@ void Decryptor::finish_crypto(){
 }
 
 
+//CTR superblock size may not be a power of two
+//so we cannot simply mask bits
+inline uint64_t align_block_to_ctr_sb(uint64_t addr){
+    unsigned m = addr/CTR_SUPER_BLOCK_SIZE;
+    return m*CTR_SUPER_BLOCK_SIZE;
+}
+
 void Decryptor::merge_counters(uint64_t data_addr){
     
-    uint64_t addr_aligned = data_addr & CTR_SUPER_BLOCK_MASK;
+    uint64_t addr_aligned = align_block_to_ctr_sb(data_addr);
     
     bool is_identical = true;
     for (unsigned i = 0; i < CTR_SUPER_BLOCK_SIZE/64-1; ++i){
@@ -322,7 +330,9 @@ void Decryptor::merge_counters(uint64_t data_addr){
 
 void Decryptor::update_patch(uint64_t data_addr){
 
-    uint64_t addr_aligned = data_addr & CTR_SUPER_BLOCK_MASK;
+    uint64_t addr_aligned =  align_block_to_ctr_sb(data_addr);// & CTR_SUPER_BLOCK_MASK;
+
+    MEE_DEBUG("update_addr_aligned\t0x" << hex << addr_aligned << "\t0x" << data_addr);
 
     //we are branching out the counter for the first time
     if( !is_patched(data_addr) ){
@@ -332,7 +342,7 @@ void Decryptor::update_patch(uint64_t data_addr){
         //to a single value. since a 64 bit (or 56 bit) counter will not overflow, this 
         //will work fine.
 
-        for (unsigned i = 0; i < CTR_SUPER_BLOCK_SIZE/64-1; ++i)
+        for (unsigned i = 0; i < CTR_SUPER_BLOCK_SIZE/64; ++i)
         {
             p.patches[i] = 1;
         }
@@ -344,10 +354,27 @@ void Decryptor::update_patch(uint64_t data_addr){
     }
 
 
-    unsigned block_idx =  ( data_addr & (CTR_SUPER_BLOCK_SIZE-1) )/CTR_SUPER_BLOCK_SIZE ;
+    unsigned block_idx = (data_addr - addr_aligned)/64; //( data_addr & (CTR_SUPER_BLOCK_SIZE-1) )/CTR_SUPER_BLOCK_SIZE ;
 
-    //we increment the counter for the block that was must updated
-    counter_patch[addr_aligned].patches[block_idx]++;
+    MEE_DEBUG("update_block_idx\t" << block_idx);
+
+    //we update the counter for the block that was just updated
+    //but we want to increase probability of merge, so we update it to be
+    //the same as the largest counter in the super block
+
+    uint64_t max_ctr = counter_patch[addr_aligned].patches[block_idx] + 1;
+
+    for (unsigned i = 0; i < CTR_SUPER_BLOCK_SIZE/64; ++i){
+    
+        if (counter_patch[addr_aligned].patches[i] > max_ctr){
+            max_ctr = counter_patch[addr_aligned].patches[i];
+            }
+            
+    }
+
+
+    
+    counter_patch[addr_aligned].patches[block_idx] = max_ctr;
     MEE_DEBUG("update_patch: 0x" << hex << data_addr);
 
     //we check if the counter can be merged
@@ -932,7 +959,7 @@ void Decryptor::read_response(){
 bool Decryptor::is_patched(uint64_t address){
 
 #ifdef TETRIS    
-    uint64_t addr_aligned = address & CTR_SUPER_BLOCK_MASK;
+    uint64_t addr_aligned = align_block_to_ctr_sb(address); // & CTR_SUPER_BLOCK_MASK;
 
     MEE_DEBUG("check_patch: 0x" << hex << addr_aligned << "\t0x" << hex << address);
 
@@ -1163,10 +1190,14 @@ bool Decryptor::add_input(bool is_write, uint64_t address){
     //create entry if it's first access
     if(mem_block_accesses.count(address) == 0){
         mem_block_accesses[address] = 0;
+        mem_block_writes[address] = 0;
     }
 
     mem_block_accesses[address]++;
 
+    if(is_write){
+        mem_block_writes[address]++;
+    }
 
 
     return true;
@@ -1240,7 +1271,7 @@ uint64_t Decryptor::get_split_ctr_encryptions(){
 
     uint64_t encryptions = 0;
 
-    for (auto iter : mem_block_accesses) {
+    for (auto iter : mem_block_writes) {
 
         uint64_t access_count = iter.second;
 
