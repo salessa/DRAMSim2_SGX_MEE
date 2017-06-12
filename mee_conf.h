@@ -7,7 +7,7 @@
 
 
 
-#define CTR_BITS 64
+#define CTR_BITS 56
 #define MAC_BITS 64
 
 //this is for the counter cache

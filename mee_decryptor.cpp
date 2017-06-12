@@ -1253,7 +1253,7 @@ bool Decryptor::exit_sim() {
 uint64_t Decryptor::get_branch_bytes(){
 
     //number of blocks occupied by counters + MAC for branches
-    uint64_t total_branch_blocks = counter_patch.size()/BRANCH_CTRS_PER_BLOCK;
+    uint64_t total_branch_blocksz = counter_patch.size()/BRANCH_CTRS_PER_BLOCK;
 
     //total memory space allocated for storing counter branches
     uint64_t total_branch_bytes = total_branch_blocks*64;
@@ -1275,10 +1275,10 @@ uint64_t Decryptor::get_split_ctr_encryptions(){
 
         uint64_t access_count = iter.second;
 
-        //we assume a 7-bit counter as per the original paper, 
-        //hence we assume 1 re-encryption every 128-accesses
+        //we assume a 8-bit counter
+        //hence we assume 1 re-encryption every 256-accesses
         
-        encryptions += access_count/128; //integer div = floor function
+        encryptions += access_count/256; //integer div = floor function
 
     }
 
