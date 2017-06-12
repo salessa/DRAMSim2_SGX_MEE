@@ -1253,7 +1253,7 @@ bool Decryptor::exit_sim() {
 uint64_t Decryptor::get_branch_bytes(){
 
     //number of blocks occupied by counters + MAC for branches
-    uint64_t total_branch_blocksz = counter_patch.size()/BRANCH_CTRS_PER_BLOCK;
+    uint64_t total_branch_blocks = counter_patch.size()/BRANCH_CTRS_PER_BLOCK;
 
     //total memory space allocated for storing counter branches
     uint64_t total_branch_bytes = total_branch_blocks*64;
