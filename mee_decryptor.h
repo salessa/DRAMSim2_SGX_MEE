@@ -48,8 +48,11 @@ public:
     uint64_t get_branch_bytes();
     uint64_t get_unmerged_branch_bytes();
     uint64_t get_split_ctr_encryptions();
+    uint64_t get_increment_ctr_encryptions();
     uint64_t get_working_set_bytes();
     uint64_t get_merge_count();
+    void update_split_ctr(uint64_t data_addr);
+    void update_increment_ctr(uint64_t data_addr);
     
     
 private:
@@ -224,7 +227,15 @@ private:
 
     uint64_t counter_merges;
 
+    //******************
 
+    unordered_map<uint64_t, uint64_t> split_counters;
+    unordered_map<uint64_t, uint64_t> increment_counters;
+
+    uint64_t split_counters_reenc;
+
+    uint64_t increment_counters_merges;
+    uint64_t increment_counters_reenc;
 
 
 };

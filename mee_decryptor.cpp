@@ -11,9 +11,10 @@ static uint64_t MAC_SUPER_BLOCK_SIZE;
 static uint64_t MAC_SUPER_BLOCKS;
 static uint64_t MAC_SUPER_BLOCK_MASK;
 
-static uint64_t CTR_SUPER_BLOCK_MASK;
+//we assume an 8 bit counter
+static unsigned MINOR_CTR_MAX = 256;
 
-static uint64_t BRANCH_CTRS_PER_BLOCK;
+//static uint64_t CTR_SUPER_BLOCK_MASK;
 
 static uint64_t BLOCKS_PER_BRANCH;
 
@@ -24,7 +25,10 @@ Decryptor::Decryptor(FACache *cache_, FACache *prefetch_buff_, MEESystem *dram_,
   RequestTypeStr{"BLOCK", "MAC", "VER", "L0", "L1", "L2", "L3", "L4", "L5", "PATCH_BLOCK"}, 
   active_address(0),
   active_is_write(false),
-  request_is_active(false) {
+  request_is_active(false),
+  split_counters_reenc(0),
+  increment_counters_reenc(0)
+   {
 
 
     CTR_SUPER_BLOCK_SIZE = ctr_super_block_size;
@@ -200,7 +204,7 @@ bool Decryptor::send_dram_req(bool is_write, uint64_t addr){
         MEE_DEBUG("DRAM_Data_Req:\t0x" << hex << addr);
 
         bool ret = dram->send_dram_req(is_write, addr);
-        if(ret) outstanding_dram.push_back(addr);
+        if(ret && !is_write) outstanding_dram.push_back(addr);
         return ret;
 
     }
@@ -275,7 +279,11 @@ void Decryptor::finish_crypto(){
         //we need to update the patch status
         MEE_DEBUG("update called");
         update_patch(addr);
+        update_increment_ctr(addr);
+        
 #endif
+
+        update_split_ctr(addr);
 
 
     }
@@ -330,6 +338,82 @@ void Decryptor::merge_counters(uint64_t data_addr){
 
 }
 
+void Decryptor::update_split_ctr(uint64_t data_addr){
+
+    const unsigned PAGE_SIZE = 4096;
+    const uint64_t MASK = ~(PAGE_SIZE - 1);
+
+    uint64_t addr_aligned = data_addr & MASK ;
+
+    if( split_counters.count(data_addr) == 0 ){
+        split_counters[data_addr] = 0;
+    }
+
+    split_counters[data_addr]++;
+
+
+    if(split_counters[data_addr] < MINOR_CTR_MAX) return;
+
+    split_counters_reenc++;
+
+    for(unsigned i = addr_aligned; i < addr_aligned + PAGE_SIZE - 64; i+=64){
+
+        split_counters[i] = 0;
+
+    }
+
+
+}
+
+void Decryptor::update_increment_ctr(uint64_t data_addr){
+    
+    uint64_t addr_aligned = align_block_to_ctr_sb(data_addr);
+
+
+    if( increment_counters.count(data_addr) == 0){
+        increment_counters[data_addr] = 0;
+    }
+
+    unsigned max_ctr = increment_counters[data_addr] + 1;
+    
+    for(unsigned i = addr_aligned; i < addr_aligned + CTR_SUPER_BLOCK_SIZE; i+=64){
+        
+        if( increment_counters.count(i) > 0 ){
+            if( increment_counters[i] > max_ctr  ){
+                max_ctr = increment_counters[i];
+            }
+        }
+
+    }
+
+    increment_counters[data_addr] = max_ctr;
+
+    if(max_ctr >= MINOR_CTR_MAX){
+        increment_counters_reenc++;
+    }
+
+    
+    bool is_identical = true;
+    for(unsigned i = addr_aligned; i < addr_aligned + CTR_SUPER_BLOCK_SIZE - 64; i+=64){
+
+        is_identical = is_identical && 
+                        ( increment_counters[i] == increment_counters[i+64] );
+
+    }
+
+    if (!is_identical && (max_ctr < MINOR_CTR_MAX)) return;
+
+    MEE_DEBUG("Merging Split Ctrs:")
+    for(unsigned i = addr_aligned; i < addr_aligned + CTR_SUPER_BLOCK_SIZE; i+=64){
+        MEE_DEBUG("Merged \t0x" << hex << i );
+        increment_counters[i] = 0;
+
+    }
+
+    
+
+    
+}
 
 void Decryptor::update_patch(uint64_t data_addr){
 
@@ -1264,6 +1348,8 @@ bool Decryptor::exit_sim() {
 
 }
 
+
+
 uint64_t Decryptor::get_branch_bytes(){
 
     return counter_patch.size() * BLOCKS_PER_BRANCH * 64;
@@ -1276,26 +1362,13 @@ uint64_t Decryptor::get_unmerged_branch_bytes(){
 
 }
 
+uint64_t Decryptor::get_increment_ctr_encryptions(){
+    return increment_counters_reenc;
+}
 
 uint64_t Decryptor::get_split_ctr_encryptions(){
-
-    //go through all the accesses and calculate re-encryptions
     
-
-    uint64_t encryptions = 0;
-
-    for (auto iter : mem_block_writes) {
-
-        uint64_t access_count = iter.second;
-
-        //we assume a 8-bit counter
-        //hence we assume 1 re-encryption every 256-accesses
-        
-        encryptions += access_count/256; //integer div = floor function
-
-    }
-
-    return encryptions;
+    return split_counters_reenc;
 
 
 }

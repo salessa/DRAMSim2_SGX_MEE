@@ -236,6 +236,7 @@ void MEESystem::printStats(bool final_stats){
     PRINT( "Branch Size (bytes) " << decryptor->get_branch_bytes() ); 
     PRINT( "Umerged Branch Size (bytes) " << decryptor->get_unmerged_branch_bytes() );
     PRINT( "Merges " <<  decryptor->get_merge_count() ) ;
+    PRINT( "Increment CTR Re-encryptions " << decryptor->get_increment_ctr_encryptions() ); 
 #endif
 
 #ifdef SPLIT_CTR_STAT
