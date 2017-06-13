@@ -15,7 +15,7 @@ static uint64_t CTR_SUPER_BLOCK_MASK;
 
 static uint64_t BRANCH_CTRS_PER_BLOCK;
 
-
+static uint64_t BLOCKS_PER_BRANCH;
 
 
 Decryptor::Decryptor(FACache *cache_, FACache *prefetch_buff_, MEESystem *dram_, uint64_t mac_super_block_size,
@@ -46,7 +46,8 @@ Decryptor::Decryptor(FACache *cache_, FACache *prefetch_buff_, MEESystem *dram_,
 
     //each cache line will store a MAC value for that memory block.
     //So the space we have for storing counters is 512 bits - MAC_BITS
-    BRANCH_CTRS_PER_BLOCK = ctr_bits_per_branch/(512 - MAC_BITS );
+    BLOCKS_PER_BRANCH = ceil( ctr_bits_per_branch / (512.0-MAC_BITS) );
+
 
     //===
 
@@ -255,6 +256,8 @@ void Decryptor::finish_crypto(){
 
     if(is_write){
 
+        dram_write_queue.push(addr);
+
         MEE_DEBUG("write_done\t0x" << hex << addr);
 
         //on a write, all counters and MAC need to be updated.
@@ -348,6 +351,7 @@ void Decryptor::update_patch(uint64_t data_addr){
         }
 
         counter_patch[addr_aligned] = p;
+        counter_patch_unmerged[addr_aligned] = p;
 
         MEE_DEBUG("new_patch: 0x" << hex << addr_aligned << "\t0x" << hex << data_addr);
 
@@ -1094,6 +1098,16 @@ void Decryptor::process_final_pipeline(){
     }
 
 
+    //if we have pending writes to DRAM
+    if(!dram_write_queue.empty() ){
+        bool success = send_data_req(true, dram_write_queue.front());
+
+        if(success){
+            dram_write_queue.pop();
+        }
+    }
+
+
 }
 
 //this reads outputs from the AES pipeline and
@@ -1252,14 +1266,13 @@ bool Decryptor::exit_sim() {
 
 uint64_t Decryptor::get_branch_bytes(){
 
-    //number of blocks occupied by counters + MAC for branches
-    uint64_t total_branch_blocks = counter_patch.size()/BRANCH_CTRS_PER_BLOCK;
+    return counter_patch.size() * BLOCKS_PER_BRANCH * 64;
 
-    //total memory space allocated for storing counter branches
-    uint64_t total_branch_bytes = total_branch_blocks*64;
+}
 
+uint64_t Decryptor::get_unmerged_branch_bytes(){
 
-    return total_branch_bytes;
+    return counter_patch_unmerged.size() * BLOCKS_PER_BRANCH * 64;
 
 }
 
@@ -1298,3 +1311,5 @@ uint64_t Decryptor::get_working_set_bytes(){
 uint64_t Decryptor::get_merge_count(){
     return counter_merges;
 }
+
+

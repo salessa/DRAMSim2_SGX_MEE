@@ -233,7 +233,8 @@ void MEESystem::init_sim_objects(){
 void MEESystem::printStats(bool final_stats){
 
 #ifdef TETRIS
-    PRINT( "Branch Size (bytes)" << decryptor->get_branch_bytes() ); 
+    PRINT( "Branch Size (bytes) " << decryptor->get_branch_bytes() ); 
+    PRINT( "Umerged Branch Size (bytes) " << decryptor->get_unmerged_branch_bytes() );
     PRINT( "Merges " <<  decryptor->get_merge_count() ) ;
 #endif
 

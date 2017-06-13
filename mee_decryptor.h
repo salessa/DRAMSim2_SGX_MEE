@@ -46,6 +46,7 @@ public:
 
     //used for printing stats every epoch
     uint64_t get_branch_bytes();
+    uint64_t get_unmerged_branch_bytes();
     uint64_t get_split_ctr_encryptions();
     uint64_t get_working_set_bytes();
     uint64_t get_merge_count();
@@ -86,6 +87,8 @@ private:
     queue<uint64_t> aes_input_queue; 
     queue<uint64_t> output_queue; //response that is ready to be returned to cores/caches
     queue<uint64_t> response_queue;
+
+    queue<uint64_t> dram_write_queue;
 
     queue<bool> output_write_flags;
     queue<bool> write_flags;
@@ -205,6 +208,10 @@ private:
     //to this table, which is indxed by the address of the block address aligned 
     //to the superblock size boundary
     unordered_map<uint64_t, CounterPatch> counter_patch;
+
+
+    //we track another one with patch disabled 
+    unordered_map<uint64_t, CounterPatch> counter_patch_unmerged;
 
 
     //*****************
