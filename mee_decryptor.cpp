@@ -155,11 +155,12 @@ inline uint64_t Decryptor::get_patch_addr(uint64_t ver_addr){
 
 //this gives us the index of the first transaction with 
 //this physical address
-int Decryptor::search_trans_by_addr(uint64_t addr){
+int Decryptor::search_trans_by_addr(uint64_t addr, bool ready_only = false){
 
     for (unsigned i = 0; i < transactions_addr.size(); ++i){
         
         if (transactions_addr[i] == addr){
+            if(ready_only && !is_trans_ready(transactions_status[i]) ) continue;
             return i;
         }        
     }
@@ -204,7 +205,7 @@ bool Decryptor::send_dram_req(bool is_write, uint64_t addr){
         MEE_DEBUG("DRAM_Data_Req:\t0x" << hex << addr);
 
         bool ret = dram->send_dram_req(is_write, addr);
-        if(ret && !is_write) outstanding_dram.push_back(addr);
+        if(ret && !is_write) outstanding_dram_reads.push_back(addr);
         return ret;
 
     }
@@ -252,7 +253,7 @@ void Decryptor::finish_crypto(){
 
     //make cache updates "ready"
 
-    int trans_idx = search_trans_by_addr(addr);
+    int trans_idx = search_trans_by_addr(addr, true);
 
     //@@bool is_write = transactions[addr].test(WRITE_FLAG);
 
@@ -277,7 +278,6 @@ void Decryptor::finish_crypto(){
 
 #ifdef TETRIS
         //we need to update the patch status
-        MEE_DEBUG("update called");
         update_patch(addr);
         update_increment_ctr(addr);
         
@@ -294,8 +294,10 @@ void Decryptor::finish_crypto(){
 
     write_flags.push(is_write);
 
+    MEE_DEBUG("before erase:" << transactions_status.size());
     transactions_status.erase( transactions_status.begin() + trans_idx );
     transactions_addr.erase( transactions_addr.begin() + trans_idx );
+    MEE_DEBUG("after erase:" << transactions_status.size());
 
 #ifdef PMAC
     mac_blocs_read.erase(mac_blocs_read.begin() + trans_idx);
@@ -370,20 +372,22 @@ void Decryptor::update_increment_ctr(uint64_t data_addr){
     uint64_t addr_aligned = align_block_to_ctr_sb(data_addr);
 
 
-    if( increment_counters.count(data_addr) == 0){
-        increment_counters[data_addr] = 0;
+    for(uint64_t i = addr_aligned; i < addr_aligned + CTR_SUPER_BLOCK_SIZE; i+=64){
+        MEE_DEBUG("increment_init 0x" << hex << i);
+        if( increment_counters.count(i) == 0 ){
+            increment_counters[i] = 0;
+        }
     }
 
     unsigned max_ctr = increment_counters[data_addr] + 1;
     
-    for(unsigned i = addr_aligned; i < addr_aligned + CTR_SUPER_BLOCK_SIZE; i+=64){
+    for(uint64_t i = addr_aligned; i < addr_aligned + CTR_SUPER_BLOCK_SIZE; i+=64){
         
-        if( increment_counters.count(i) > 0 ){
-            if( increment_counters[i] > max_ctr  ){
-                max_ctr = increment_counters[i];
-            }
+        if( increment_counters[i] > max_ctr  ){
+            max_ctr = increment_counters[i];
         }
-
+        
+    
     }
 
     increment_counters[data_addr] = max_ctr;
@@ -394,7 +398,7 @@ void Decryptor::update_increment_ctr(uint64_t data_addr){
 
     
     bool is_identical = true;
-    for(unsigned i = addr_aligned; i < addr_aligned + CTR_SUPER_BLOCK_SIZE - 64; i+=64){
+    for(uint64_t i = addr_aligned; i < addr_aligned + CTR_SUPER_BLOCK_SIZE - 64; i+=64){
 
         is_identical = is_identical && 
                         ( increment_counters[i] == increment_counters[i+64] );
@@ -403,9 +407,8 @@ void Decryptor::update_increment_ctr(uint64_t data_addr){
 
     if (!is_identical && (max_ctr < MINOR_CTR_MAX)) return;
 
-    MEE_DEBUG("Merging Split Ctrs:")
-    for(unsigned i = addr_aligned; i < addr_aligned + CTR_SUPER_BLOCK_SIZE; i+=64){
-        MEE_DEBUG("Merged \t0x" << hex << i );
+
+    for(uint64_t i = addr_aligned; i < addr_aligned + CTR_SUPER_BLOCK_SIZE; i+=64){
         increment_counters[i] = 0;
 
     }
@@ -864,6 +867,44 @@ void Decryptor::process_mee_input(){
 }
 
 
+bool Decryptor::is_trans_ready(StatusBits status){
+
+        bool ready = status.test(MAC) &&
+                    status.test(VER)  && //this will be ready when either branched ctr or VER is read.
+                    status.test(BLOCK) &&
+                    status.test(L0);
+
+#ifdef FETCH_L1
+        ready = ready && status.test(L1);
+#endif
+
+#ifdef FETCH_L2
+        ready = ready && status.test(L2);
+#endif
+
+#ifdef FETCH_L3
+        ready = ready && status.test(L3);
+#endif
+
+#ifdef FETCH_L4
+        ready = ready && status.test(L4);
+#endif
+
+#ifdef FETCH_L5
+        ready = ready && status.test(L5);
+#endif
+
+#ifdef PMAC
+        //when using PMACs, we also need to wait until all data blocks 
+        //in the super block are read
+        ready = ready && status.test(BLOCK_EXTRA);
+#endif
+
+    return ready;
+
+
+}
+
 //*********************************************
 //this function is used to update the status of outstanding requests
 //it is called when a certain data is ready
@@ -928,6 +969,7 @@ void Decryptor::update_status(uint64_t addr){
     int trans_idx = search_waiting_trans(data_addr, type);
     bool sram_hit = trans_idx  != -1;
 
+    MEE_DEBUG("SRAM HIT \t0x" << hex << data_addr << "\t" << sram_hit );
 
 
 
@@ -955,40 +997,7 @@ void Decryptor::update_status(uint64_t addr){
         
         //check if that request has all what it needs and 
         //start decryption/re-encryption
-        bool ready = transactions_status[trans_idx].test(MAC) &&
-                     transactions_status[trans_idx].test(VER)  && //this will be ready when either branched ctr or VER is read.
-                     transactions_status[trans_idx].test(BLOCK) &&
-                     transactions_status[trans_idx].test(L0);
-
-#ifdef FETCH_L1
-        ready = ready && transactions_status[trans_idx].test(L1);
-#endif
-
-#ifdef FETCH_L2
-        ready = ready && transactions_status[trans_idx].test(L2);
-#endif
-
-#ifdef FETCH_L3
-        ready = ready && transactions_status[trans_idx].test(L3);
-#endif
-
-#ifdef FETCH_L4
-        ready = ready && transactions_status[trans_idx].test(L4);
-#endif
-
-#ifdef FETCH_L5
-        ready = ready && transactions_status[trans_idx].test(L5);
-#endif
-
-
-                     
-                     
-
-#ifdef PMAC
-        //when using PMACs, we also need to wait until all data blocks 
-        //in the super block are read
-        ready = ready && transactions_status[trans_idx].test(BLOCK_EXTRA);
-#endif
+        bool ready = is_trans_ready(transactions_status[trans_idx]);
 
         if( ready ){
             MEE_DEBUG("ALL_READY\t0x" << hex << data_addr);
@@ -1016,12 +1025,13 @@ void Decryptor::read_response(){
         //to avoid snooping responses for the ctr/mac cache
         //we make sure the address corresponds to something we requested.
         //in an actual hardware, there probably won't be such bus sharing
-        auto search = std::find(outstanding_dram.begin(), outstanding_dram.end(),
+        auto search_read = std::find(outstanding_dram_reads.begin(), outstanding_dram_reads.end(),
                   addr);
 
-        if(search != outstanding_dram.end()){
+        
+        if(search_read != outstanding_dram_reads.end()){
             response_queue.push(addr);
-            outstanding_dram.erase(search);
+            outstanding_dram_reads.erase(search_read);
             MEE_DEBUG("dram->queue\t0x" << hex << addr);
         }
     }
@@ -1307,7 +1317,7 @@ bool Decryptor::can_accept_input(){
 
     return input_queue.size() < DECRYPTOR_INPUT_QUEUE && 
            cache_update_queue.size() < CACHE_UPDATE_QUEUE && 
-           outstanding_dram.size() < DRAM_REQ_OUTSTANDING;
+           outstanding_dram_reads.size() < DRAM_REQ_OUTSTANDING;
 
 }
 

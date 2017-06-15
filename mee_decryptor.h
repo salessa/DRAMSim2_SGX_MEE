@@ -65,6 +65,7 @@ private:
         WRITE_FLAG
     }RequestFlag;
 
+    typedef bitset<REQUESTS_PER_BLOCK + 1> StatusBits; //we need 1 more bit to mark writes
 
     string RequestTypeStr[REQUESTS_PER_BLOCK];
 
@@ -73,8 +74,9 @@ private:
     void process_aes_pipeline();
     void process_final_pipeline();
     uint64_t get_counter_address(uint64_t address);
-    int search_trans_by_addr(uint64_t addr);
+    int search_trans_by_addr(uint64_t addr, bool ready_only);
     int search_waiting_trans(uint64_t addr, RequestFlag_ type);
+    bool is_trans_ready(StatusBits status);
     //void process_ctr_response();
 
 
@@ -107,7 +109,6 @@ private:
     Pipeline<uint64_t> *crypto_finalize_pipeline;
 
     void update_status(uint64_t addr);
-    typedef bitset<REQUESTS_PER_BLOCK + 1> StatusBits; //we need 1 more bit to mark writes
     
 
 
@@ -139,7 +140,7 @@ private:
     multimap<uint64_t, uint64_t> outstanding_superblock_reads;
 
 
-    vector<uint64_t> outstanding_dram;
+    vector<uint64_t> outstanding_dram_reads;
 
 
 
