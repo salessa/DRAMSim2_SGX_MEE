@@ -357,7 +357,7 @@ void Decryptor::update_split_ctr(uint64_t data_addr){
 
     split_counters_reenc++;
 
-    for(unsigned i = addr_aligned; i < addr_aligned + CTR_SUPER_BLOCK_SIZE - 64; i+=64){
+    for(uint64_t i = addr_aligned; i < addr_aligned + CTR_SUPER_BLOCK_SIZE - 64; i+=64){
 
         split_counters[i] = 0;
 
