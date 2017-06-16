@@ -20,6 +20,7 @@ class Decryptor;
 #include <vector>
 #include <map>
 #include <cmath>
+#include <string>
 
 using namespace std;
 
@@ -45,14 +46,11 @@ public:
     bool exit_sim() ;
 
     //used for printing stats every epoch
-    uint64_t get_branch_bytes();
-    uint64_t get_unmerged_branch_bytes();
-    uint64_t get_split_ctr_encryptions();
-    uint64_t get_increment_ctr_encryptions();
-    uint64_t get_working_set_bytes();
-    uint64_t get_merge_count();
+    string get_stats();
+    
     void update_split_ctr(uint64_t data_addr);
     void update_increment_ctr(uint64_t data_addr);
+    
     
     
 private:
@@ -237,6 +235,7 @@ private:
 
     uint64_t increment_counters_merges;
     uint64_t increment_counters_reenc;
+    uint64_t total_reenc_blocks;
 
 
 };

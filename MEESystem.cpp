@@ -3,8 +3,6 @@
 #include <sstream>
 #include <fstream>
 
-#define SPLIT_CTR_STAT
-
 //we are not making these constants since
 //we want them to be configurable
 
@@ -123,8 +121,30 @@ MEESystem::MEESystem(MultiChannelMemorySystem *mem_sys_, ostream &dramsim_log_):
 
 #ifdef TETRIS
     config_log << "CTR_OPT_ENABLED\t" << "Y\n";
+    config_log << "MINOR_CTR_MAX\t" << MINOR_CTR_MAX << "\n";
 #else
     config_log << "CTR_OPT_ENABLED\t" << "N\n";
+#endif
+
+
+#ifdef FETCH_L1
+    config_log << "FETCH_L1\t" << "Y\n";
+#endif
+
+#ifdef FETCH_L2
+    config_log << "FETCH_L2\t" << "Y\n";
+#endif
+
+#ifdef FETCH_L3
+    config_log << "FETCH_L3\t" << "Y\n";
+#endif
+
+#ifdef FETCH_L4
+    config_log << "FETCH_L4\t" << "Y\n";
+#endif
+
+#ifdef FETCH_L5
+    config_log << "FETCH_L5\t" << "Y\n";
 #endif
 
 
@@ -232,19 +252,8 @@ void MEESystem::init_sim_objects(){
 
 void MEESystem::printStats(bool final_stats){
 
-#ifdef TETRIS
-    PRINT( "Branch Size (bytes) " << decryptor->get_branch_bytes() ); 
-    PRINT( "Umerged Branch Size (bytes) " << decryptor->get_unmerged_branch_bytes() );
-    PRINT( "Merges " <<  decryptor->get_merge_count() ) ;
-    PRINT( "Increment CTR Re-encryptions " << decryptor->get_increment_ctr_encryptions() ); 
-#endif
-
-#ifdef SPLIT_CTR_STAT
-    PRINT( "Split CTR Re-encryptions " << decryptor->get_split_ctr_encryptions() ); 
-#endif
-
-    PRINT("Working Set (bytes)" << decryptor->get_working_set_bytes() );
-
+    PRINT(decryptor->get_stats());
+    
 }
 
 
