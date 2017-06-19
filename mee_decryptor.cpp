@@ -282,6 +282,7 @@ void Decryptor::finish_crypto(){
         //we need to update the patch status
         update_patch(addr);
         update_increment_ctr(addr);
+        update_smart_ctr(addr);
         
 #endif
 
@@ -362,6 +363,65 @@ void Decryptor::update_split_ctr(uint64_t data_addr){
         split_counters[i] = 0;
 
     }
+
+
+}
+
+
+void Decryptor::update_smart_ctr(uint64_t data_addr){
+
+    static unordered_map<uint64_t, int> minor_counters;
+
+
+    uint64_t addr_aligned = align_block_to_ctr_sb(data_addr);
+
+
+    for(uint64_t i = addr_aligned; i < addr_aligned + CTR_SUPER_BLOCK_SIZE; i+=64){
+        if( minor_counters.count(i) == 0 ){
+            minor_counters[i] = 0;
+        }
+    }
+
+    int new_ctr = minor_counters[data_addr] + 1;
+    minor_counters[data_addr] = new_ctr;
+
+    //counter re-adjustment
+    if(minor_counters[data_addr] >= MINOR_CTR_MAX  ){
+        for(uint64_t i = addr_aligned; i < addr_aligned + CTR_SUPER_BLOCK_SIZE; i+=64){
+            minor_counters[i] -= new_ctr/4;
+        }
+    }
+
+    //re-encryption on underflow
+    for(uint64_t i = addr_aligned; i < addr_aligned + CTR_SUPER_BLOCK_SIZE; i+=64){
+        if( minor_counters[i] <= (0 - MINOR_CTR_MAX) ){
+            minor_counters[i] = 0;
+            smart_counter_reenc_blocks++;
+        }
+    }
+
+
+    //merge counters
+    bool is_identical = true;
+    for(uint64_t i = addr_aligned; i < addr_aligned + CTR_SUPER_BLOCK_SIZE - 64; i+=64){
+
+        is_identical = is_identical && 
+                        ( increment_counters[i] == increment_counters[i+64] );
+
+
+    }
+
+    //perform a merge if all are identical
+    if(!is_identical) return;
+
+    smart_counter_merges++;
+
+     for(uint64_t i = addr_aligned; i < addr_aligned + CTR_SUPER_BLOCK_SIZE; i+=64){
+        minor_counters[i] = 0;
+    }
+
+
+
 
 
 }
@@ -1392,6 +1452,10 @@ string Decryptor::get_stats(){
     stat += "Merges:" + to_string( counter_merges  ) + "\n";
     stat += "Increment CTR Re-encryptions: " + to_string(increment_counters_reenc) + "\n";
     stat += "Re-encrypted Bytes: " + to_string(total_reenc_blocks*64) + "\n";
+
+    stat += "Smart CTR Re-encrypted Bytes: " + to_string(smart_counter_reenc_blocks*64) + "\n";
+    stat += "Smart CTR Merges: " + to_string(smart_counter_merges) + "\n";
+
 #endif
 
 #ifdef SPLIT_CTR_STAT

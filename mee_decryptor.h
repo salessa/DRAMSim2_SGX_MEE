@@ -50,6 +50,7 @@ public:
     
     void update_split_ctr(uint64_t data_addr);
     void update_increment_ctr(uint64_t data_addr);
+    void update_smart_ctr(uint64_t data_addr);
     
     
     
@@ -236,6 +237,9 @@ private:
     uint64_t increment_counters_merges;
     uint64_t increment_counters_reenc;
     uint64_t total_reenc_blocks;
+
+    uint64_t smart_counter_merges;
+    uint64_t smart_counter_reenc_blocks;
 
 
 };
