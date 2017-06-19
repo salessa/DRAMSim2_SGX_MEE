@@ -378,16 +378,20 @@ void Decryptor::update_increment_ctr(uint64_t data_addr){
         }
     }
 
+
     unsigned max_ctr = increment_counters[data_addr] + 1;
-    
+
+#ifdef FAST_INCREMENT    
+    //fast increment scheme updates new counter to max counter value in the super block.
+    //this scheme is could potentially accelerate the convergence of counters
     for(uint64_t i = addr_aligned; i < addr_aligned + CTR_SUPER_BLOCK_SIZE; i+=64){
         
         if( increment_counters[i] > max_ctr  ){
             max_ctr = increment_counters[i];
         }
-        
-    
     }
+
+#endif
 
     increment_counters[data_addr] = max_ctr;
 
@@ -1386,7 +1390,7 @@ string Decryptor::get_stats(){
     unsigned unmerged_patch_size =  counter_patch_unmerged.size() * BLOCKS_PER_BRANCH * 64;
     stat += "Unmerged Patch Size (bytes): " + to_string(unmerged_patch_size) + "\n";
     stat += "Merges:" + to_string( counter_merges  ) + "\n";
-    stat += "Incremtn CTR Re-encryptions: " + to_string(increment_counters_reenc) + "\n";
+    stat += "Increment CTR Re-encryptions: " + to_string(increment_counters_reenc) + "\n";
     stat += "Re-encrypted Bytes: " + to_string(total_reenc_blocks*64) + "\n";
 #endif
 
@@ -1395,7 +1399,6 @@ string Decryptor::get_stats(){
 #endif
 
     stat += "R+W Locations (bytes): " + to_string(mem_block_accesses.size() * 64) + "\n";
-    stat += "Writeen Locations (bytes): " + to_string(mem_block_writes.size() * 64) + "\n";
     
     return stat;
 
