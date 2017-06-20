@@ -239,6 +239,7 @@ private:
     uint64_t total_reenc_blocks;
 
     uint64_t smart_counter_merges;
+    uint64_t smart_ctr_decrements;
     uint64_t smart_counter_reenc_blocks;
 
 

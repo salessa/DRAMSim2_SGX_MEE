@@ -29,7 +29,10 @@ Decryptor::Decryptor(FACache *cache_, FACache *prefetch_buff_, MEESystem *dram_,
   request_is_active(false),
   split_counters_reenc(0),
   increment_counters_reenc(0),
-  total_reenc_blocks(0)
+  total_reenc_blocks(0),
+  smart_counter_merges(0),
+  smart_ctr_decrements(0),
+  smart_counter_reenc_blocks(0)
    {
 
 
@@ -386,15 +389,17 @@ void Decryptor::update_smart_ctr(uint64_t data_addr){
     minor_counters[data_addr] = new_ctr;
 
     //counter re-adjustment
-    if(minor_counters[data_addr] >= MINOR_CTR_MAX  ){
+    //we are treating the counters as signed integers. so we will only let it grow to MINOR_CTR_MAX/2 - 1
+    if(minor_counters[data_addr] >= (int)MINOR_CTR_MAX/2 - 1  ){
+        smart_ctr_decrements++;
         for(uint64_t i = addr_aligned; i < addr_aligned + CTR_SUPER_BLOCK_SIZE; i+=64){
-            minor_counters[i] -= new_ctr/4;
+            minor_counters[i] --;  
         }
     }
 
     //re-encryption on underflow
     for(uint64_t i = addr_aligned; i < addr_aligned + CTR_SUPER_BLOCK_SIZE; i+=64){
-        if( minor_counters[i] <= (0 - MINOR_CTR_MAX) ){
+        if( minor_counters[i] <= (0 - (int)MINOR_CTR_MAX/2) - 1 ){
             minor_counters[i] = 0;
             smart_counter_reenc_blocks++;
         }
@@ -1449,20 +1454,25 @@ string Decryptor::get_stats(){
 
     unsigned unmerged_patch_size =  counter_patch_unmerged.size() * BLOCKS_PER_BRANCH * 64;
     stat += "Unmerged Patch Size (bytes): " + to_string(unmerged_patch_size) + "\n";
-    stat += "Merges:" + to_string( counter_merges  ) + "\n";
+    stat += "Increment Merges:" + to_string( counter_merges  ) + "\n";
     stat += "Increment CTR Re-encryptions: " + to_string(increment_counters_reenc) + "\n";
-    stat += "Re-encrypted Bytes: " + to_string(total_reenc_blocks*64) + "\n";
-
-    stat += "Smart CTR Re-encrypted Bytes: " + to_string(smart_counter_reenc_blocks*64) + "\n";
+    stat += "Increment CTR Re-encrypted Bytes: " + to_string(total_reenc_blocks*64) + "\n";
+    stat += "======\n";
     stat += "Smart CTR Merges: " + to_string(smart_counter_merges) + "\n";
-
+    stat += "Smart CTR Re-encrypted Bytes: " + to_string(smart_counter_reenc_blocks*64) + "\n";
+    stat += "Smart CTR Decrements: " + to_string(smart_ctr_decrements) + "\n";
+    stat += "======\n";
 #endif
 
 #ifdef SPLIT_CTR_STAT
-    stat += " ==== \n Split CTR Re-encryption: " + to_string(split_counters_reenc) + "\n ==== \n";
+    stat += "Split CTR Re-encryption: " + to_string(split_counters_reenc) + "\n";
+    //split counter scheme re-encryptes the entire super-block
+    stat += "Split CTR Re-encrypted Bytes: " + to_string(split_counters_reenc*CTR_SUPER_BLOCK_SIZE) + "\n";
+    stat += "======\n";
 #endif
 
     stat += "R+W Locations (bytes): " + to_string(mem_block_accesses.size() * 64) + "\n";
+    stat += "======\n";
     
     return stat;
 
