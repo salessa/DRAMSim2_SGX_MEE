@@ -370,10 +370,24 @@ void Decryptor::update_split_ctr(uint64_t data_addr){
 
 }
 
+bool are_all_identical(unordered_map<uint64_t, uint64_t> minor_counters, uint64_t start, uint64_t end){
+
+    bool is_identical = true;
+    for(uint64_t i = start; i < end-64; i+=64){
+        is_identical = is_identical && 
+                        ( minor_counters[i] == minor_counters[i+64] );
+
+    }
+
+    return is_identical;
+
+
+}
+
 
 void Decryptor::update_smart_ctr(uint64_t data_addr){
 
-    static unordered_map<uint64_t, int> minor_counters;
+    static unordered_map<uint64_t, uint64_t> minor_counters;
 
 
     uint64_t addr_aligned = align_block_to_ctr_sb(data_addr);
@@ -385,47 +399,57 @@ void Decryptor::update_smart_ctr(uint64_t data_addr){
         }
     }
 
-    int new_ctr = minor_counters[data_addr] + 1;
+    uint64_t new_ctr = minor_counters[data_addr] + 1;
     minor_counters[data_addr] = new_ctr;
+    
+    //perform a merge if all minor counters are identical
+    bool is_identical = are_all_identical(minor_counters, addr_aligned, addr_aligned + CTR_SUPER_BLOCK_SIZE );
 
-    //counter re-adjustment
-    //we are treating the counters as signed integers. so we will only let it grow to MINOR_CTR_MAX/2 - 1
-    if(minor_counters[data_addr] >= (int)MINOR_CTR_MAX/2 - 1  ){
-        smart_ctr_decrements++;
+    if(is_identical){
+        smart_counter_merges++;
+
         for(uint64_t i = addr_aligned; i < addr_aligned + CTR_SUPER_BLOCK_SIZE; i+=64){
-            minor_counters[i] --;  
-        }
-    }
-
-    //re-encryption on underflow
-    for(uint64_t i = addr_aligned; i < addr_aligned + CTR_SUPER_BLOCK_SIZE; i+=64){
-        if( minor_counters[i] <= (0 - (int)MINOR_CTR_MAX/2) - 1 ){
             minor_counters[i] = 0;
-            smart_counter_reenc_blocks++;
+        }
+
+        //we don't need to other re-adjustments if we are doing a merge
+        return;
+    }
+
+    //compute min_ctr: we will use it for counter decrement later
+    uint64_t min_ctr = MINOR_CTR_MAX;
+    for(uint64_t i = addr_aligned; i < addr_aligned + CTR_SUPER_BLOCK_SIZE; i+=64){
+        if( minor_counters[i] < min_ctr ){
+             min_ctr = minor_counters[i];
         }
     }
 
 
-    //merge counters
-    bool is_identical = true;
-    for(uint64_t i = addr_aligned; i < addr_aligned + CTR_SUPER_BLOCK_SIZE - 64; i+=64){
+    //counter re-adjustment on overflow
+    if(minor_counters[data_addr] >= MINOR_CTR_MAX - 1  ){
+        //we can decrement counters if they are all > 0
+        if(min_ctr > 0){
+            smart_ctr_decrements++;
+            for(uint64_t i = addr_aligned; i < addr_aligned + CTR_SUPER_BLOCK_SIZE; i+=64){
+                minor_counters[i] -= min_ctr;  
+            }
+        }
 
-        is_identical = is_identical && 
-                        ( increment_counters[i] == increment_counters[i+64] );
-
+        //otherwise we are forced to re-encrypt
+        else{ 
+            
+            //avoid re-encrpting blocks that have already converged to a certain value
+            //unsigned identical_count = max_ctr_count(minor_counters, addr_aligned, addr_aligned + CTR_SUPER_BLOCK_SIZE);
+            //smart_counter_reenc_blocks += CTR_SUPER_BLOCK_SIZE/64 - identical_count;
+            smart_counter_reenc_blocks += CTR_SUPER_BLOCK_SIZE/64 - 1;
+            
+            //reset
+            for(uint64_t i = addr_aligned; i < addr_aligned + CTR_SUPER_BLOCK_SIZE; i+=64){
+                minor_counters[i] = 0;  
+            }
+        }
 
     }
-
-    //perform a merge if all are identical
-    if(!is_identical) return;
-
-    smart_counter_merges++;
-
-     for(uint64_t i = addr_aligned; i < addr_aligned + CTR_SUPER_BLOCK_SIZE; i+=64){
-        minor_counters[i] = 0;
-    }
-
-
 
 
 
@@ -465,20 +489,9 @@ void Decryptor::update_increment_ctr(uint64_t data_addr){
     }
 
     
-    bool is_identical = true;
-
-    //we want to count the number of blocks that are identical so that we can
-    //count the number of blocks that need to be re-encrypted
-    unsigned identical_count = 1; 
-    for(uint64_t i = addr_aligned; i < addr_aligned + CTR_SUPER_BLOCK_SIZE - 64; i+=64){
-
-        is_identical = is_identical && 
-                        ( increment_counters[i] == increment_counters[i+64] );
+    bool is_identical = are_all_identical(increment_counters, addr_aligned, addr_aligned + CTR_SUPER_BLOCK_SIZE) ;
+    //unsigned identical_count = max_ctr_count(increment_counters, addr_aligned, addr_aligned + CTR_SUPER_BLOCK_SIZE);
     
-        if (is_identical) identical_count++;
-
-    }
-
     if (!is_identical && (max_ctr < MINOR_CTR_MAX)) return;
 
     //we either need to do re-enc or merge
@@ -488,7 +501,7 @@ void Decryptor::update_increment_ctr(uint64_t data_addr){
     }
 
     else{
-        total_reenc_blocks += CTR_SUPER_BLOCK_SIZE/64 - identical_count;
+        total_reenc_blocks += CTR_SUPER_BLOCK_SIZE/64 - 1;
     }
 
 
