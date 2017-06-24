@@ -229,9 +229,6 @@ private:
 
     //******************
 
-    unordered_map<uint64_t, uint64_t> split_counters;
-    unordered_map<uint64_t, uint64_t> increment_counters;
-
     uint64_t split_counters_reenc;
 
     uint64_t increment_counters_merges;

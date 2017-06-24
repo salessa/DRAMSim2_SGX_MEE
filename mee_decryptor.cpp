@@ -346,6 +346,9 @@ void Decryptor::merge_counters(uint64_t data_addr){
 
 void Decryptor::update_split_ctr(uint64_t data_addr){
 
+    static unordered_map<uint64_t, uint64_t> split_counters;
+
+
     const uint64_t MASK = ~(CTR_SUPER_BLOCK_SIZE - 1);
 
     uint64_t addr_aligned = data_addr & MASK ;
@@ -370,10 +373,10 @@ void Decryptor::update_split_ctr(uint64_t data_addr){
 
 }
 
-bool are_all_identical(unordered_map<uint64_t, uint64_t> minor_counters, uint64_t start, uint64_t end){
+bool are_all_identical(unordered_map<uint64_t, uint64_t>& minor_counters, uint64_t start, uint64_t end){
 
     bool is_identical = true;
-    for(uint64_t i = start; i < end-64; i+=64){
+    for(uint64_t i = start; i <= end-64; i+=64){
         is_identical = is_identical && 
                         ( minor_counters[i] == minor_counters[i+64] );
 
@@ -424,31 +427,22 @@ void Decryptor::update_smart_ctr(uint64_t data_addr){
         }
     }
 
+    //update stat
+    if(min_ctr > 0) smart_ctr_decrements++;        
 
-    //counter re-adjustment on overflow
+    //re-adjust counters
+    for(uint64_t i = addr_aligned; i < addr_aligned + CTR_SUPER_BLOCK_SIZE; i+=64){
+        minor_counters[i] -= min_ctr;  
+    }
+
+    //overflow
     if(minor_counters[data_addr] >= MINOR_CTR_MAX - 1  ){
-        //we can decrement counters if they are all > 0
-        if(min_ctr > 0){
-            smart_ctr_decrements++;
-            for(uint64_t i = addr_aligned; i < addr_aligned + CTR_SUPER_BLOCK_SIZE; i+=64){
-                minor_counters[i] -= min_ctr;  
-            }
-        }
-
-        //otherwise we are forced to re-encrypt
-        else{ 
-            
-            //avoid re-encrpting blocks that have already converged to a certain value
-            //unsigned identical_count = max_ctr_count(minor_counters, addr_aligned, addr_aligned + CTR_SUPER_BLOCK_SIZE);
-            //smart_counter_reenc_blocks += CTR_SUPER_BLOCK_SIZE/64 - identical_count;
             smart_counter_reenc_blocks += CTR_SUPER_BLOCK_SIZE/64 - 1;
             
             //reset
             for(uint64_t i = addr_aligned; i < addr_aligned + CTR_SUPER_BLOCK_SIZE; i+=64){
                 minor_counters[i] = 0;  
             }
-        }
-
     }
 
 
@@ -456,7 +450,9 @@ void Decryptor::update_smart_ctr(uint64_t data_addr){
 }
 
 void Decryptor::update_increment_ctr(uint64_t data_addr){
-    
+
+    static unordered_map<uint64_t, uint64_t> increment_counters;
+
     uint64_t addr_aligned = align_block_to_ctr_sb(data_addr);
 
 
@@ -486,33 +482,27 @@ void Decryptor::update_increment_ctr(uint64_t data_addr){
 
     if(max_ctr >= MINOR_CTR_MAX){
         increment_counters_reenc++;
+        total_reenc_blocks += CTR_SUPER_BLOCK_SIZE/64 - 1;
+        for(uint64_t i = addr_aligned; i < addr_aligned + CTR_SUPER_BLOCK_SIZE; i+=64){
+            increment_counters[i] = 0;
+        }
+
+        return;
     }
 
     
     bool is_identical = are_all_identical(increment_counters, addr_aligned, addr_aligned + CTR_SUPER_BLOCK_SIZE) ;
     //unsigned identical_count = max_ctr_count(increment_counters, addr_aligned, addr_aligned + CTR_SUPER_BLOCK_SIZE);
-    
-    if (!is_identical && (max_ctr < MINOR_CTR_MAX)) return;
-
-    //we either need to do re-enc or merge
 
     if(is_identical){
         counter_merges++;
+        for(uint64_t i = addr_aligned; i < addr_aligned + CTR_SUPER_BLOCK_SIZE; i+=64){
+            increment_counters[i] = 0;
+        }
     }
 
-    else{
-        total_reenc_blocks += CTR_SUPER_BLOCK_SIZE/64 - 1;
-    }
+ 
 
-
-    for(uint64_t i = addr_aligned; i < addr_aligned + CTR_SUPER_BLOCK_SIZE; i+=64){
-        increment_counters[i] = 0;
-
-    }
-
-    
-
-    
 }
 
 void Decryptor::update_patch(uint64_t data_addr){
@@ -658,7 +648,7 @@ void Decryptor::request_extra_blocks(){
     //this is the first block in the super block
     uint64_t base_addr = active_address & MAC_SUPER_BLOCK_MASK;
 
-    uint64_t addr;
+    uint64_t addr = active_address;
 
 
     //in our new scheme we need to request multiple memory blocks
@@ -1467,6 +1457,8 @@ string Decryptor::get_stats(){
 
     unsigned unmerged_patch_size =  counter_patch_unmerged.size() * BLOCKS_PER_BRANCH * 64;
     stat += "Unmerged Patch Size (bytes): " + to_string(unmerged_patch_size) + "\n";
+    stat += "======\n";
+
     stat += "Increment Merges:" + to_string( counter_merges  ) + "\n";
     stat += "Increment CTR Re-encryptions: " + to_string(increment_counters_reenc) + "\n";
     stat += "Increment CTR Re-encrypted Bytes: " + to_string(total_reenc_blocks*64) + "\n";
