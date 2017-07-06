@@ -154,6 +154,12 @@ MEESystem::MEESystem(MultiChannelMemorySystem *mem_sys_, ostream &dramsim_log_):
     config_log << "MAC_OPT_ENABLED\t" << "N\n";
 #endif
 
+#ifdef MAC_ECC
+    config_log << "MAC_ECC_ENABLED\t" << "Y\n";
+#else
+    config_log << "MAC_ECC_ENABLED\t" << "N\n";
+#endif
+
     dump_config(config_log.str());
 
 

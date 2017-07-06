@@ -278,8 +278,12 @@ void Decryptor::finish_crypto(){
         cache_update_queue.push( get_L0_address(addr) );
         cache_update_queue.push( get_L1_address(addr) );
         cache_update_queue.push( get_L2_address(addr) );
-        cache_update_queue.push( get_MAC_address(addr) );
         cache_update_queue.push( get_VER_address(addr) );
+
+#ifndef MAC_ECC
+        //in MAC_ECC scheme, we do not need to update the MAC separately
+        cache_update_queue.push( get_MAC_address(addr) );
+#endif
 
 #ifdef TETRIS
         //we need to update the patch status
@@ -708,8 +712,12 @@ void Decryptor::fetch_ctr_node(RequestFlag current_node, RequestFlag next_node, 
         if(last_node){
 
 #ifdef PMAC   
-                //in our scheme, we need to read the MAC for both reads and writes
+                //in MAC superblock scheme, we need to read the MAC for both reads and writes
                 active_request_status = MAC;
+#elif defined(MAC_ECC)
+                //MAC ECC scheme does not require spearate MAC fetch transaction
+                if(active_is_write) request_is_active = false;
+                else active_request_status = BLOCK;
 #else
                 //in the base line scheme, we will simply compute a new MAC
                 if(active_is_write) request_is_active = false; // we are done!
@@ -925,6 +933,12 @@ void Decryptor::process_mee_input(){
 #endif
 
         }
+
+#ifdef MAC_ECC
+    //in MAC ecc scheme, we don't have to perform separate MAC reads in all cases
+    MEE_DEBUG("MAC_ECC_set\t" << hex << active_address);
+    status.set(MAC);
+#endif
 
 //        else{
 
