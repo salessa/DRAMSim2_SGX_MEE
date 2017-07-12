@@ -73,7 +73,7 @@
 #define VIRT_ADDR_MASK 0xffffffff
 
 
-
+#define RICE_K 4
 
 
 #endif

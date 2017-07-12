@@ -51,6 +51,7 @@ public:
     void update_split_ctr(uint64_t data_addr);
     void update_increment_ctr(uint64_t data_addr);
     void update_smart_ctr(uint64_t data_addr);
+    void update_compressed_ctr(uint64_t data_addr);
     
     
     
@@ -239,6 +240,8 @@ private:
     uint64_t smart_ctr_decrements;
     uint64_t smart_counter_reenc_blocks;
 
+    uint64_t compressed_counter_reenc_blocks;
+    uint64_t compressed_counter_reenc;
 
 };
 

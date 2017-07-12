@@ -32,7 +32,9 @@ Decryptor::Decryptor(FACache *cache_, FACache *prefetch_buff_, MEESystem *dram_,
   total_reenc_blocks(0),
   smart_counter_merges(0),
   smart_ctr_decrements(0),
-  smart_counter_reenc_blocks(0)
+  smart_counter_reenc_blocks(0),
+  compressed_counter_reenc_blocks(0),
+  compressed_counter_reenc(0)
    {
 
 
@@ -290,6 +292,7 @@ void Decryptor::finish_crypto(){
         update_patch(addr);
         update_increment_ctr(addr);
         update_smart_ctr(addr);
+        update_compressed_ctr(addr);
         
 #endif
 
@@ -391,6 +394,79 @@ bool are_all_identical(unordered_map<uint64_t, uint64_t>& minor_counters, uint64
 
 }
 
+
+int rice_len(uint64_t x, int k)
+{
+	int m = 1 << k;
+	int q = x / m;
+	return q + 1 + k;
+}
+
+void Decryptor::update_compressed_ctr(uint64_t data_addr){
+
+    static unordered_map<uint64_t, uint64_t> minor_counters;
+
+    uint64_t addr_aligned = align_block_to_ctr_sb(data_addr);
+
+
+    for(uint64_t i = addr_aligned; i < addr_aligned + CTR_SUPER_BLOCK_SIZE; i+=64){
+        if( minor_counters.count(i) == 0 ){
+            minor_counters[i] = 0;
+        }
+    }
+
+    uint64_t new_ctr = minor_counters[data_addr] + 1;
+    minor_counters[data_addr] = new_ctr;
+    
+    //perform a merge if all minor counters are identical
+    bool is_identical = are_all_identical(minor_counters, addr_aligned, addr_aligned + CTR_SUPER_BLOCK_SIZE );
+
+    if(is_identical){
+        smart_counter_merges++;
+
+        for(uint64_t i = addr_aligned; i < addr_aligned + CTR_SUPER_BLOCK_SIZE; i+=64){
+            minor_counters[i] = 0;
+        }
+
+        //we don't need to other re-adjustments if we are doing a merge
+        return;
+    }
+
+    //compute min_ctr: we will use it for counter decrement later
+    uint64_t min_ctr = MINOR_CTR_MAX;
+    for(uint64_t i = addr_aligned; i < addr_aligned + CTR_SUPER_BLOCK_SIZE; i+=64){
+        if( minor_counters[i] < min_ctr ){
+             min_ctr = minor_counters[i];
+        }
+    }
+
+
+    //re-adjust counters and attempt to compress
+    unsigned compressed_len = 0;
+    for(uint64_t i = addr_aligned; i < addr_aligned + CTR_SUPER_BLOCK_SIZE; i+=64){
+        minor_counters[i] -= min_ctr;  
+        compressed_len += rice_len(minor_counters[i], RICE_K);
+    }
+    
+
+    uint64_t max_size =  log2(MINOR_CTR_MAX) * CTR_SUPER_BLOCK_SIZE/64;
+    MEE_DEBUG("compressed_len:\t" << compressed_len);
+    MEE_DEBUG("max_size:\t" << max_size );
+    //overflow: compressed bit width > what is allocated
+    if( compressed_len > max_size){
+
+            compressed_counter_reenc_blocks += CTR_SUPER_BLOCK_SIZE/64 - 1;
+            compressed_counter_reenc++;
+            //reset
+            for(uint64_t i = addr_aligned; i < addr_aligned + CTR_SUPER_BLOCK_SIZE; i+=64){
+                minor_counters[i] = 0;  
+            }
+    }
+
+
+
+
+}
 
 void Decryptor::update_smart_ctr(uint64_t data_addr){
 
@@ -1481,6 +1557,10 @@ string Decryptor::get_stats(){
     stat += "Smart CTR Re-encrypted Bytes: " + to_string(smart_counter_reenc_blocks*64) + "\n";
     stat += "Smart CTR Decrements: " + to_string(smart_ctr_decrements) + "\n";
     stat += "======\n";
+    stat += "Compressed CTR Re-encryption: " + to_string(compressed_counter_reenc) + "\n";
+    stat += "Compressed CTR Re-encrypted Bytes: " + to_string(compressed_counter_reenc_blocks*64) + "\n";
+    stat += "======\n";
+
 #endif
 
 #ifdef SPLIT_CTR_STAT
