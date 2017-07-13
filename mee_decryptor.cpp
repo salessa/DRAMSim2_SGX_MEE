@@ -33,6 +33,7 @@ Decryptor::Decryptor(FACache *cache_, FACache *prefetch_buff_, MEESystem *dram_,
   smart_counter_merges(0),
   smart_ctr_decrements(0),
   smart_counter_reenc_blocks(0),
+  smart_counter_reenc(0),
   compressed_counter_reenc_blocks(0),
   compressed_counter_reenc(0)
    {
@@ -289,7 +290,7 @@ void Decryptor::finish_crypto(){
 
 #ifdef TETRIS
         //we need to update the patch status
-        update_patch(addr);
+        //update_patch(addr);
         update_increment_ctr(addr);
         update_smart_ctr(addr);
         update_compressed_ctr(addr);
@@ -518,6 +519,7 @@ void Decryptor::update_smart_ctr(uint64_t data_addr){
     //overflow
     if(minor_counters[data_addr] >= MINOR_CTR_MAX - 1  ){
             smart_counter_reenc_blocks += CTR_SUPER_BLOCK_SIZE/64 - 1;
+            smart_counter_reenc++;
             
             //reset
             for(uint64_t i = addr_aligned; i < addr_aligned + CTR_SUPER_BLOCK_SIZE; i+=64){
@@ -1543,10 +1545,10 @@ string Decryptor::get_stats(){
 
 #ifdef TETRIS
     unsigned ctr_patch_size = counter_patch.size() * BLOCKS_PER_BRANCH * 64;
-    stat += "Patch Size (bytes): " +  to_string(ctr_patch_size) + "\n";
+//    stat += "Patch Size (bytes): " +  to_string(ctr_patch_size) + "\n";
 
     unsigned unmerged_patch_size =  counter_patch_unmerged.size() * BLOCKS_PER_BRANCH * 64;
-    stat += "Unmerged Patch Size (bytes): " + to_string(unmerged_patch_size) + "\n";
+//    stat += "Unmerged Patch Size (bytes): " + to_string(unmerged_patch_size) + "\n";
     stat += "======\n";
 
     stat += "Increment Merges:" + to_string( counter_merges  ) + "\n";
@@ -1554,6 +1556,7 @@ string Decryptor::get_stats(){
     stat += "Increment CTR Re-encrypted Bytes: " + to_string(total_reenc_blocks*64) + "\n";
     stat += "======\n";
     stat += "Smart CTR Merges: " + to_string(smart_counter_merges) + "\n";
+    stat += "Smart CTR Re-encryptions: " + to_string(smart_counter_reenc) + "\n";
     stat += "Smart CTR Re-encrypted Bytes: " + to_string(smart_counter_reenc_blocks*64) + "\n";
     stat += "Smart CTR Decrements: " + to_string(smart_ctr_decrements) + "\n";
     stat += "======\n";
