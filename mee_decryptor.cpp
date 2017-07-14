@@ -450,11 +450,13 @@ void Decryptor::update_compressed_ctr(uint64_t data_addr){
     }
     
 
-    uint64_t max_size =  log2(MINOR_CTR_MAX) * CTR_SUPER_BLOCK_SIZE/64;
+    
+    uint64_t max_len = DELTA_BITS_TOTAL;
+
     MEE_DEBUG("compressed_len:\t" << compressed_len);
-    MEE_DEBUG("max_size:\t" << max_size );
+    MEE_DEBUG("max_len:\t" << max_len );
     //overflow: compressed bit width > what is allocated
-    if( compressed_len > max_size){
+    if( compressed_len > max_len){
 
             compressed_counter_reenc_blocks += CTR_SUPER_BLOCK_SIZE/64 - 1;
             compressed_counter_reenc++;
