@@ -403,6 +403,21 @@ int rice_len(uint64_t x, int k)
 	return q + 1 + k;
 }
 
+int varint_len(uint64_t x, int k){
+    
+    if(x <= 1) return k+1;
+
+    //compute number of bits needed to store k
+    int bits = log2(x);
+
+    //compute number of k-bit words
+    int words = ceil(float(bits)/k);
+
+    return (k+1)*words;
+
+
+}
+
 void Decryptor::update_compressed_ctr(uint64_t data_addr){
 
     static unordered_map<uint64_t, uint64_t> minor_counters;
@@ -446,7 +461,7 @@ void Decryptor::update_compressed_ctr(uint64_t data_addr){
     unsigned compressed_len = 0;
     for(uint64_t i = addr_aligned; i < addr_aligned + CTR_SUPER_BLOCK_SIZE; i+=64){
         minor_counters[i] -= min_ctr;  
-        compressed_len += rice_len(minor_counters[i], RICE_K);
+        compressed_len += varint_len(minor_counters[i], RICE_K);
     }
     
 
