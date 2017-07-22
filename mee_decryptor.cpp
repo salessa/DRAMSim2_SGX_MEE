@@ -292,7 +292,7 @@ void Decryptor::finish_crypto(){
         //we need to update the patch status
         //update_patch(addr);
         update_increment_ctr(addr);
-        update_smart_ctr(addr);
+//        update_smart_ctr(addr);
         update_compressed_ctr(addr);
         
 #endif
@@ -448,19 +448,20 @@ void Decryptor::update_compressed_ctr(uint64_t data_addr){
         return;
     }
 
+    /*
     //compute min_ctr: we will use it for counter decrement later
     uint64_t min_ctr = MINOR_CTR_MAX;
     for(uint64_t i = addr_aligned; i < addr_aligned + CTR_SUPER_BLOCK_SIZE; i+=64){
         if( minor_counters[i] < min_ctr ){
              min_ctr = minor_counters[i];
         }
-    }
+    }*/
 
 
     //re-adjust counters and attempt to compress
     unsigned compressed_len = 0;
     for(uint64_t i = addr_aligned; i < addr_aligned + CTR_SUPER_BLOCK_SIZE; i+=64){
-        minor_counters[i] -= min_ctr;  
+        //minor_counters[i] -= min_ctr;  
         compressed_len += varint_len(minor_counters[i], RICE_K);
     }
     
@@ -1572,11 +1573,11 @@ string Decryptor::get_stats(){
     stat += "Increment CTR Re-encryptions: " + to_string(increment_counters_reenc) + "\n";
     stat += "Increment CTR Re-encrypted Bytes: " + to_string(total_reenc_blocks*64) + "\n";
     stat += "======\n";
-    stat += "Smart CTR Merges: " + to_string(smart_counter_merges) + "\n";
-    stat += "Smart CTR Re-encryptions: " + to_string(smart_counter_reenc) + "\n";
-    stat += "Smart CTR Re-encrypted Bytes: " + to_string(smart_counter_reenc_blocks*64) + "\n";
-    stat += "Smart CTR Decrements: " + to_string(smart_ctr_decrements) + "\n";
-    stat += "======\n";
+    // stat += "Smart CTR Merges: " + to_string(smart_counter_merges) + "\n";
+    // stat += "Smart CTR Re-encryptions: " + to_string(smart_counter_reenc) + "\n";
+    // stat += "Smart CTR Re-encrypted Bytes: " + to_string(smart_counter_reenc_blocks*64) + "\n";
+    // stat += "Smart CTR Decrements: " + to_string(smart_ctr_decrements) + "\n";
+    // stat += "======\n";
     stat += "Compressed CTR Re-encryption: " + to_string(compressed_counter_reenc) + "\n";
     stat += "Compressed CTR Re-encrypted Bytes: " + to_string(compressed_counter_reenc_blocks*64) + "\n";
     stat += "======\n";
