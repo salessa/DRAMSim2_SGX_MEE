@@ -1,4 +1,4 @@
-
+    
 
 
 #include <stdio.h>
@@ -13,8 +13,8 @@ using namespace std;
 #define ERR_OUT(str)  std::cerr<< "\033[31m" << str <<endl << "\033[0m" << dec;
 
 
-#define REQ_CONT 1
-#define MIN_REQ_INTERVAL 10
+#define REQ_CONT 1000
+#define MIN_REQ_INTERVAL 0
 
 #define TEST_SINGLE false
 #define TEST_SEQ false
@@ -30,27 +30,59 @@ TransactionCompleteCB *write_cb;
 
 void gen_access_stream(){
 
-    //write to same address multiple times to
-    //trigger split counter re-encryption 
     MemAccess_ access;
-    // for (int i = 0; i < 600; ++i)
-    // {
 
-    //     access.address = 0x300000UL;
-    //     access.is_write = true;
-
-    //     access_stream.push_back(access);
-    // }
-
-    //write to sequential addresses to trigger merge
-    for (int i = 0; i < 500; ++i)
+    //write to same address multiple times to
+    //trigger split counter re-encryption
+    for (int i = 0; i < 256; ++i)
     {
-        access.address = 0x300000UL + 64*i;
-        access.is_write = true;
 
+        // if(i%2==0){
+        //     access.address = 0x300000UL;
+        // }
+        // else{
+        //     access.address = 0x300000UL + 64;
+        // }
+
+        access.address = 0x300000UL;
+        access.is_write = true;
         access_stream.push_back(access);
 
+        // access.address = 0x300000UL;
+        // access.is_write = true;
+        // access_stream.push_back(access);
+
+
+        // access.address = 0x300000UL + 64;
+        // access.is_write = true;
+        // access_stream.push_back(access);
+
+        // access.address = 0x300000UL + 128;
+        // access.is_write = true;
+        // access_stream.push_back(access);
+
+        // access.address = 0x300000UL + 192;
+        // access.is_write = true;
+        // access_stream.push_back(access);
+
+        
+
+
     }
+
+
+    //write to sequential addresses to trigger merge
+    for(int j=0; j<215; j++){
+        for (int i = 0; i < 64; ++i)
+        {
+            access.address = 0x100000000UL + 64*i;
+            access.is_write = true;
+
+            access_stream.push_back(access);
+
+        }
+    }
+
 
 
 }
@@ -114,7 +146,7 @@ void some_object::capture_stat(){
     stat_new = false;
 
 
-    if(!found) ERR_OUT("Unknown request\t0x" << hex << stat_address);
+    if(!found) ERR_OUT("TEST: Unknown request\t0x" << hex << stat_address);
 
 }
 
@@ -143,7 +175,7 @@ void some_object::check_stats(){
 
 void some_object::test_single(MultiChannelMemorySystem *mem){
 
-    bool is_write = false;
+    bool is_write = true;
     uint64_t addr = 0x300000UL;
 
     unsigned cycles = 4000;
@@ -152,7 +184,8 @@ void some_object::test_single(MultiChannelMemorySystem *mem){
 
     cout << "is_write:" << is_write << endl;
 
-    assert(mem->addTransaction(is_write, addr) && "ADD Failed");
+    assert(mem->addTransaction(false, addr) && "ADD Failed");
+    //assert(mem->addTransaction(false, addr) && "ADD Failed");
 
     RequestStat stat;
     stat.addr = addr;
@@ -200,7 +233,7 @@ void some_object::test_sequential(MultiChannelMemorySystem *mem, unsigned count,
         if(mem->willAcceptTransaction(addr) && current_count < count &&
             last_req_cycle + MIN_REQ_INTERVAL <= current_cycles  ){
 
-            is_write = false; //~is_write; //( random() % 2 == 0 );
+            is_write = true; //~is_write; //( random() % 2 == 0 );
 
             assert(mem->addTransaction(is_write, addr) && "Add failed");
 
@@ -239,7 +272,7 @@ void some_object::test_sequential(MultiChannelMemorySystem *mem, unsigned count,
 void some_object::test_trace(MultiChannelMemorySystem *mem, vector<MemAccess_> accesses , unsigned cycles){
 
 
-
+    cout << "access_size\t" << accesses.size() << endl;
     unsigned last_req_cycle=0;
     unsigned current_count = 0;
 
@@ -268,13 +301,18 @@ void some_object::test_trace(MultiChannelMemorySystem *mem, vector<MemAccess_> a
 
         }
         else{
-            if(current_count < REQ_CONT) stalled_cycles++;
+            if(current_count < accesses.size() && !mem->willAcceptTransaction( accesses[current_count].address  )){
+                stalled_cycles++;
+            } 
+            
         }
 
         //capture_stat();
         mem->update();
 
     }
+
+    mem->printStats(true);
 
 }
 
@@ -362,7 +400,7 @@ int main()
     
 
     
-    unsigned sim_cycles = 4000*REQ_CONT; //allow 1K cycles per request which is too much.
+    unsigned sim_cycles = 5000*REQ_CONT; //allow 1K cycles per request which is too much.
     
 
     some_object *obj;
@@ -421,12 +459,13 @@ int main()
         obj = create_new_sys();
         //obj->mem->RegisterCallbacks(read_cb, write_cb, power_callback);
         
-        sim_cycles = 4000*access_stream.size();
+        sim_cycles = 500*access_stream.size();
         obj->test_trace(obj->mem, access_stream, sim_cycles );
         obj->check_stats();
 
 
-        cout << "Average Latency Trace: " << total_latency/REQ_CONT << endl;
+        cout << "Average Latency Trace: " << total_latency/access_stream.size() << endl;
+        cout << "Stalled Cycles:\t" << obj->stalled_cycles << endl;
 
     }
 

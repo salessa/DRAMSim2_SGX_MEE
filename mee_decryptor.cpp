@@ -293,7 +293,7 @@ void Decryptor::finish_crypto(){
         //update_patch(addr);
         update_increment_ctr(addr);
         update_smart_ctr(addr);
-        update_compressed_ctr(addr);
+        //update_compressed_ctr(addr);
         
 #endif
 
@@ -372,7 +372,7 @@ void Decryptor::update_split_ctr(uint64_t data_addr){
 
     split_counters_reenc++;
 
-    for(uint64_t i = addr_aligned; i < addr_aligned + CTR_SUPER_BLOCK_SIZE - 64; i+=64){
+    for(uint64_t i = addr_aligned; i < addr_aligned + CTR_SUPER_BLOCK_SIZE; i+=64){
 
         split_counters[i] = 0;
 
@@ -384,7 +384,7 @@ void Decryptor::update_split_ctr(uint64_t data_addr){
 bool are_all_identical(unordered_map<uint64_t, uint64_t>& minor_counters, uint64_t start, uint64_t end){
 
     bool is_identical = true;
-    for(uint64_t i = start; i <= end-64; i+=64){
+    for(uint64_t i = start; i < end-64; i+=64){
         is_identical = is_identical && 
                         ( minor_counters[i] == minor_counters[i+64] );
 
@@ -438,7 +438,6 @@ void Decryptor::update_compressed_ctr(uint64_t data_addr){
     bool is_identical = are_all_identical(minor_counters, addr_aligned, addr_aligned + CTR_SUPER_BLOCK_SIZE );
 
     if(is_identical){
-        smart_counter_merges++;
 
         for(uint64_t i = addr_aligned; i < addr_aligned + CTR_SUPER_BLOCK_SIZE; i+=64){
             minor_counters[i] = 0;
@@ -448,38 +447,34 @@ void Decryptor::update_compressed_ctr(uint64_t data_addr){
         return;
     }
 
-    /*
-    //compute min_ctr: we will use it for counter decrement later
-    uint64_t min_ctr = MINOR_CTR_MAX;
-    for(uint64_t i = addr_aligned; i < addr_aligned + CTR_SUPER_BLOCK_SIZE; i+=64){
-        if( minor_counters[i] < min_ctr ){
-             min_ctr = minor_counters[i];
-        }
-    }*/
-
-
     //re-adjust counters and attempt to compress
-    unsigned compressed_len = 0;
+    unsigned compressed_len[4] = {0,0,0,0}; //we devide counters to 4 groups of 16
+    int group_ctr = 0;
     for(uint64_t i = addr_aligned; i < addr_aligned + CTR_SUPER_BLOCK_SIZE; i+=64){
-        //minor_counters[i] -= min_ctr;  
-        compressed_len += varint_len(minor_counters[i], RICE_K);
+        group_ctr++;
+        compressed_len[group_ctr/4] += varint_len(minor_counters[i], RICE_K);
     }
     
 
     
-    uint64_t max_len = DELTA_BITS_TOTAL;
+    uint64_t max_len = DELTA_BITS_TOTAL/4;
 
     MEE_DEBUG("compressed_len:\t" << compressed_len);
     MEE_DEBUG("max_len:\t" << max_len );
     //overflow: compressed bit width > what is allocated
-    if( compressed_len > max_len){
+    for(int i = 0; i < 4; i++){
+        if( compressed_len[i] > max_len){
 
-            compressed_counter_reenc_blocks += CTR_SUPER_BLOCK_SIZE/64 - 1;
-            compressed_counter_reenc++;
-            //reset
-            for(uint64_t i = addr_aligned; i < addr_aligned + CTR_SUPER_BLOCK_SIZE; i+=64){
-                minor_counters[i] = 0;  
-            }
+                compressed_counter_reenc_blocks += CTR_SUPER_BLOCK_SIZE/64 - 1;
+                compressed_counter_reenc++;
+                //reset
+                for(uint64_t i = addr_aligned; i < addr_aligned + CTR_SUPER_BLOCK_SIZE; i+=64){
+                    minor_counters[i] = 0;  
+                }
+
+                return;
+        }
+
     }
 
 
@@ -544,6 +539,7 @@ void Decryptor::update_smart_ctr(uint64_t data_addr){
             //reset
             for(uint64_t i = addr_aligned; i < addr_aligned + CTR_SUPER_BLOCK_SIZE; i+=64){
                 minor_counters[i] = 0;  
+                MEE_DEBUG("resetting-smart\t" << hex << i);
             }
     }
 
@@ -566,33 +562,8 @@ void Decryptor::update_increment_ctr(uint64_t data_addr){
     }
 
 
-    unsigned max_ctr = increment_counters[data_addr] + 1;
+    increment_counters[data_addr] = increment_counters[data_addr] + 1;
 
-#ifdef FAST_INCREMENT    
-    //fast increment scheme updates new counter to max counter value in the super block.
-    //this scheme is could potentially accelerate the convergence of counters
-    for(uint64_t i = addr_aligned; i < addr_aligned + CTR_SUPER_BLOCK_SIZE; i+=64){
-        
-        if( increment_counters[i] > max_ctr  ){
-            max_ctr = increment_counters[i];
-        }
-    }
-
-#endif
-
-    increment_counters[data_addr] = max_ctr;
-
-    if(max_ctr >= MINOR_CTR_MAX){
-        increment_counters_reenc++;
-        total_reenc_blocks += CTR_SUPER_BLOCK_SIZE/64 - 1;
-        for(uint64_t i = addr_aligned; i < addr_aligned + CTR_SUPER_BLOCK_SIZE; i+=64){
-            increment_counters[i] = 0;
-        }
-
-        return;
-    }
-
-    
     bool is_identical = are_all_identical(increment_counters, addr_aligned, addr_aligned + CTR_SUPER_BLOCK_SIZE) ;
     //unsigned identical_count = max_ctr_count(increment_counters, addr_aligned, addr_aligned + CTR_SUPER_BLOCK_SIZE);
 
@@ -601,6 +572,19 @@ void Decryptor::update_increment_ctr(uint64_t data_addr){
         for(uint64_t i = addr_aligned; i < addr_aligned + CTR_SUPER_BLOCK_SIZE; i+=64){
             increment_counters[i] = 0;
         }
+
+        return;
+    }
+
+    if(increment_counters[data_addr] >= MINOR_CTR_MAX){
+        increment_counters_reenc++;
+        total_reenc_blocks += CTR_SUPER_BLOCK_SIZE/64 - 1;
+        for(uint64_t i = addr_aligned; i < addr_aligned + CTR_SUPER_BLOCK_SIZE; i+=64){
+            increment_counters[i] = 0;
+            MEE_DEBUG("resetting-increment\t" << hex << i);
+        }
+
+        return;
     }
 
  
