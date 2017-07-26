@@ -455,9 +455,9 @@ void Decryptor::update_compressed_ctr(uint64_t data_addr){
 
     for(uint64_t i = addr_aligned; i < addr_aligned + CTR_SUPER_BLOCK_SIZE; i+=64){
         unsigned len = varint_len(minor_counters[i], RICE_K);
-        compressed_len[group_ctr/8] += len;
+        compressed_len[group_ctr%8] += len;
         MEE_DEBUG("varlen:\t" << minor_counters[i] << "\t" << len );
-        if(len > 2*(RICE_K+1) || compressed_len[group_ctr/8] > max_len ) varint_overflow = true;
+        if(len > 2*(RICE_K+1) || compressed_len[group_ctr%8] > max_len ) varint_overflow = true;
         group_ctr++;
 
     }
