@@ -40,11 +40,9 @@
 #define MAC_PER_CL 8
 
 
-//FIXME:
-//for our branching scheme, we reserve counter spots to protect the branches.
-//so we should re-work the layout so that VER_PER_CL = 4
+
 #ifdef TETRIS
-#define VER_PER_CL 8
+#define VER_PER_CL 64
 #else
 #define VER_PER_CL 8
 #endif
@@ -74,6 +72,7 @@
 
 
 #define RICE_K 4
+#define VARINT_GROUPS 16
 
 
 #endif

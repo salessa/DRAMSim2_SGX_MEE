@@ -418,6 +418,8 @@ int varint_len(uint64_t x, int k){
 
 }
 
+
+
 void Decryptor::update_compressed_ctr(uint64_t data_addr){
 
     static unordered_map<uint64_t, uint64_t> minor_counters;
@@ -448,16 +450,20 @@ void Decryptor::update_compressed_ctr(uint64_t data_addr){
     }
 
     //re-adjust counters and attempt to compress
-    unsigned compressed_len[8] = {0,0,0,0,0,0,0,0}; //we devide counters to 4 groups of 16
+    
+    unsigned compressed_len[VARINT_GROUPS];
+    for(int i=0; i< VARINT_GROUPS; i++)
+        compressed_len[i] = 0;
+
     unsigned group_ctr = 0;
     bool varint_overflow = false;
-    uint64_t max_len = DELTA_BITS_TOTAL/8;
+    uint64_t max_len = DELTA_BITS_TOTAL/VARINT_GROUPS;
 
     for(uint64_t i = addr_aligned; i < addr_aligned + CTR_SUPER_BLOCK_SIZE; i+=64){
         unsigned len = varint_len(minor_counters[i], RICE_K);
-        compressed_len[group_ctr%8] += len;
+        compressed_len[group_ctr % VARINT_GROUPS] += len;
         MEE_DEBUG("varlen:\t" << minor_counters[i] << "\t" << len );
-        if(len > 2*(RICE_K+1) || compressed_len[group_ctr%8] > max_len ) varint_overflow = true;
+        if(len > 2*(RICE_K+1) || compressed_len[group_ctr % VARINT_GROUPS] > max_len ) varint_overflow = true;
         group_ctr++;
 
     }
