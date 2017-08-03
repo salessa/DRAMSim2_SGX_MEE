@@ -4,6 +4,18 @@
 //TODO: eviction of dirty blocks
 //TODO: merge identical read requests
 
+uint16_t get_way(uint64_t address){
+    
+    //eliminate block index bits
+    address = address >> 6;
+
+    //mask tag bits
+    address = address & (WAYS-1);
+
+    return address;
+}
+
+
 FACache::FACache(MEESystem* dram, uint32_t size, uint32_t access_latency){
     this->dram = dram;
     this->access_latency = access_latency;
@@ -55,7 +67,8 @@ void FACache::process_inputs(){
     
 
     //check if it is a hit
-    bool hit =  (data_store.count(address) !=0 );
+    uint16_t way = get_way(address);
+    bool hit =  (data_store[way].count(address) !=0 );
 
     //check mshr hit (i.e. if its a secondary miss
     auto mshr_entry = std::find_if( mshr.begin(), mshr.end(), 
@@ -67,15 +80,16 @@ void FACache::process_inputs(){
 
     if(hit){
 
-        MEE_DEBUG("cache_hit\t0x" << hex << address);
+        MEE_DEBUG("cache_hit\t0x" << hex << address << " in way " << way);
 
         //update MRU data 
-        data_store[address].most_recently_used  = current_cycle;
+        
+        data_store[way][address].most_recently_used  = current_cycle;
 
         
         //just set diry bit if its a write
         if(writing){
-            data_store[address].dirty = true;
+            data_store[way][address].dirty = true;
             MEE_DEBUG("cache_write_done\t0x" << hex << address);
         }
         //schedule a response if its a read
@@ -159,17 +173,18 @@ void FACache::process_dram_response(){
         // //we need to make a space for it
         // //this happens off the critical path while processing misses.
         // //hence we do not need to add extra delay for evictions
-        evict_block();
+        uint16_t way = get_way(address);
+        evict_block(way);
 
 
         // //place it inside a cache block
         struct CacheBlock block{current_cycle, false};
-        data_store[address] = block ;
+        data_store[way][address] = block ;
 
         bool is_write = mshr_entry->is_write;
 
         if(is_write){
-            data_store[address].dirty = true;            
+            data_store[way][address].dirty = true;            
             MEE_DEBUG("cache_write_done\t0x" << hex << address);
         }
 
@@ -187,7 +202,7 @@ void FACache::process_dram_response(){
 
             if( iter->address == address ){
                 if(iter->is_write) {
-                    data_store[address].dirty = true;       
+                    data_store[way][address].dirty = true;       
                 }
                 else{
                     MEE_DEBUG("secondary_miss_serviced\t0x" << hex << address);
@@ -211,20 +226,20 @@ void FACache::process_dram_response(){
 }
 
 
-void FACache::evict_block(){
+void FACache::evict_block(uint16_t way){
 
     //MEE_DEBUG("attempt evict\t" << data_store.size());
     
-    //if not full, no need to evict (fully associative cache)
+    //if not full, no need to evict 
     //standard 64B cache
-    if(data_store.size()*64 < size ) return;
+    if(data_store[way].size()*64 < size/WAYS ) return;
 
     uint64_t min = current_cycle + 1;
     uint64_t address = 0;
     bool dirty = false;
 
     //find the LRU block
-    for(auto block: data_store){
+    for(auto block: data_store[way]){
         if(block.second.most_recently_used < min ){
             address = block.first;
             dirty = block.second.dirty;
@@ -232,7 +247,7 @@ void FACache::evict_block(){
         }
     }
 
-    data_store.erase(address);
+    data_store[way].erase(address);
 
     if(dirty){
         dram_write_buff.push(address);

@@ -21,6 +21,7 @@ using namespace std;
 #define CACHE_IN_QUEUE_SIZE 2
 #define MSHR_SIZE 32
 #define SECONDARY_BUFF_SIZE 16
+#define WAYS 8
 
 class FACache: public SimObject{
 
@@ -62,7 +63,9 @@ private:
         uint64_t address;
         bool is_write;
     };
-    unordered_map<uint64_t, CacheBlock> data_store;
+
+    
+    unordered_map<uint64_t, CacheBlock> data_store[WAYS];
 
     //pending DRAM requests
     queue<uint64_t> dram_read_buff;
@@ -76,7 +79,7 @@ private:
     void add_response_schedule(uint64_t, uint64_t);
     void process_inputs();
     void process_dram_response();
-    void evict_block();
+    void evict_block(uint16_t way);
     void send_dram_req();
 
 };

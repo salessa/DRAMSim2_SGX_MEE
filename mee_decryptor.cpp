@@ -1330,6 +1330,14 @@ void Decryptor::process_response(){
             aes_input_queue.push(0);
             aes_input_queue.push(0);
             aes_input_queue.push(0);
+
+
+#ifdef TETRIS
+            //HACK: introduce 2 cycle latency for decoding counter (i.e. base + delta)
+            aes_input_queue.push(0);
+            aes_input_queue.push(0);
+#endif
+
             aes_input_queue.push(addr);
 
             MEE_DEBUG("VER AES Start\t0x" << hex << addr);
