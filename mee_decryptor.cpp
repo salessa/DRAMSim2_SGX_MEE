@@ -356,10 +356,7 @@ void Decryptor::update_split_ctr(uint64_t data_addr){
 
     static unordered_map<uint64_t, uint64_t> split_counters;
 
-
-    const uint64_t MASK = ~(CTR_SUPER_BLOCK_SIZE - 1);
-
-    uint64_t addr_aligned = data_addr & MASK ;
+    uint64_t addr_aligned = align_block_to_ctr_sb(data_addr);
 
     if( split_counters.count(data_addr) == 0 ){
         split_counters[data_addr] = 0;
