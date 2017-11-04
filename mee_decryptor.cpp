@@ -416,7 +416,7 @@ int varint_len(uint64_t x, int k){
 }
 
 
-
+//implements all optimizations: delta + reset on identical + decrement + var length integers
 void Decryptor::update_compressed_ctr(uint64_t data_addr){
 
     static unordered_map<uint64_t, uint64_t> minor_counters;
@@ -485,6 +485,7 @@ void Decryptor::update_compressed_ctr(uint64_t data_addr){
 
 }
 
+//implements delta encoding with merge on identical + decrementing min. value before resetting
 void Decryptor::update_smart_ctr(uint64_t data_addr){
 
     static unordered_map<uint64_t, uint64_t> minor_counters;
@@ -551,6 +552,7 @@ void Decryptor::update_smart_ctr(uint64_t data_addr){
 
 }
 
+//implements delta with reset to zero on identical counters
 void Decryptor::update_increment_ctr(uint64_t data_addr){
 
     static unordered_map<uint64_t, uint64_t> increment_counters;
@@ -597,6 +599,7 @@ void Decryptor::update_increment_ctr(uint64_t data_addr){
 
 }
 
+//implements the older idea of using patches
 void Decryptor::update_patch(uint64_t data_addr){
 
     uint64_t addr_aligned =  align_block_to_ctr_sb(data_addr);// & CTR_SUPER_BLOCK_MASK;
