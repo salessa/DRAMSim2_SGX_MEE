@@ -446,8 +446,75 @@ void Decryptor::update_compressed_ctr(uint64_t data_addr){
         return;
     }
 
-    //re-adjust counters and attempt to compress
+    //Basic Var Int Idea:
+    //for variable length integers, we will have 4 deltas in a single group
+    //there will be one larger integer, and 3 smaller integers
+    //a 2-bit flag indicates which is the larger integer
+
+    //Storage:
+    //major counter is 56-bits, all deltas have to fit in 512-56 = 456 bits
+    //if we are to fit a 4KB in a block group, a fixed-size delta would be 7 bits
+    //but deltas are stored in groups of 4, and each delta group has 28 bits available
+    //2 bits are used to identify which is the larger integer: 28-2 = 26 bits left
+    //dividing up the 26 bits we can have: 
+    //      3*5 bits + 1*11 bits (5-bit small vals and 11-bit large val) OR
+    //      3*4 bits + 1*14 bits (4-bit small val and 14-bit large val)
+
+
+    //we do not store any extra data for varint encoding
+    //we just go through all minor counters re-compute encoding
+    bool varint_overflow = false;
+
+    //uint64_t step_size = 64*VARINT_GROUP_SIZE; //we check one group in each iteration
+    for(uint64_t i = addr_aligned; i < addr_aligned + CTR_SUPER_BLOCK_SIZE/VARINT_GROUP_SIZE; i+=64){
+
+        int small_deltas = 0;
+        int large_deltas = 0;
+        
+        //count how many large and small deltas we have
+        //we group deltas for var int as (assuming var int group size of 4):
+        //  [0, 16, 32, 48], [1, 17, 33, 49] ... [15, 31, 47, 63]
+        
+        const int BLOCK_SIZE = 64;
+        int distance = (BLOCK_SIZE/VARINT_GROUP_SIZE)*BLOCK_SIZE;
+        for( int j=0; j < VARINT_GROUP_SIZE; j++ ){
+
+            uint64_t delta_addr = i+ j*distance;
+
+            MEE_DEBUG("delta_addr: 0x" << hex << delta_addr );
+
+            //number of large deltas should always be 1 - else overflow
+            if (minor_counters[delta_addr] < SMALL_DELTA_MAX){
+                small_deltas++;
+            } 
+
+            else if (minor_counters[delta_addr] < LARGE_DELTA_MAX){ 
+                MEE_DEBUG("Large DELTA: 0x" << hex << delta_addr << "\t" << dec << minor_counters[delta_addr]);
+                large_deltas++;
+            }
+            else {
+                MEE_DEBUG("Overflow DELTA: 0x" << hex << delta_addr << "\t" << dec << minor_counters[delta_addr]);
+
+                varint_overflow = true; 
+                break;
+            }
+
+            //we can only have 1 large delta
+            if(large_deltas > 1) {
+                varint_overflow = true;
+                break;
+            }
+
+        }
+
+        MEE_DEBUG("=======");
+        
+    }
+
     
+    /*
+    //**this is an older attempt at a low overhead varint***
+    //re-adjust counters and attempt to compress
     unsigned compressed_len[VARINT_GROUPS];
     for(int i=0; i< VARINT_GROUPS; i++)
         compressed_len[i] = 0;
@@ -464,9 +531,9 @@ void Decryptor::update_compressed_ctr(uint64_t data_addr){
         group_ctr++;
 
     }
-
+    */
     
-    //overflow: compressed bit width > what is allocated
+    //varint overflow: data cannot be represented using varint encoeding, re-encrypt
     if( varint_overflow ){
             MEE_DEBUG("re-enc-compressed");
 
