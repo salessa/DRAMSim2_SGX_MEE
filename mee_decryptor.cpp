@@ -466,7 +466,8 @@ void Decryptor::update_compressed_ctr(uint64_t data_addr){
     bool varint_overflow = false;
 
     //uint64_t step_size = 64*VARINT_GROUP_SIZE; //we check one group in each iteration
-    for(uint64_t i = addr_aligned; i < addr_aligned + CTR_SUPER_BLOCK_SIZE/VARINT_GROUP_SIZE; i+=64){
+    //for(uint64_t i = addr_aligned; i < addr_aligned + CTR_SUPER_BLOCK_SIZE/VARINT_GROUP_SIZE; i+=64){
+    for(uint64_t i = addr_aligned; i < addr_aligned + CTR_SUPER_BLOCK_SIZE; i+=VARINT_GROUP_SIZE*64){
 
         int small_deltas = 0;
         int large_deltas = 0;
@@ -476,10 +477,11 @@ void Decryptor::update_compressed_ctr(uint64_t data_addr){
         //  [0, 16, 32, 48], [1, 17, 33, 49] ... [15, 31, 47, 63]
         
         const int BLOCK_SIZE = 64;
-        int distance = (BLOCK_SIZE/VARINT_GROUP_SIZE)*BLOCK_SIZE;
+        //int distance = (BLOCK_SIZE/VARINT_GROUP_SIZE)*BLOCK_SIZE;
         for( int j=0; j < VARINT_GROUP_SIZE; j++ ){
 
-            uint64_t delta_addr = i+ j*distance;
+            //uint64_t delta_addr = i+ j*distance;
+            uint64_t delta_addr = i+ j*64;
 
             MEE_DEBUG("delta_addr: 0x" << hex << delta_addr );
 
