@@ -465,48 +465,56 @@ void Decryptor::update_compressed_ctr(uint64_t data_addr){
     //we just go through all minor counters re-compute encoding
     bool varint_overflow = false;
 
-    //uint64_t step_size = 64*VARINT_GROUP_SIZE; //we check one group in each iteration
-    //for(uint64_t i = addr_aligned; i < addr_aligned + CTR_SUPER_BLOCK_SIZE/VARINT_GROUP_SIZE; i+=64){
+    
     for(uint64_t i = addr_aligned; i < addr_aligned + CTR_SUPER_BLOCK_SIZE; i+=VARINT_GROUP_SIZE*64){
 
-        int small_deltas = 0;
         int large_deltas = 0;
+        int large_delta_pairs = 0;
         
-        //count how many large and small deltas we have
-        //we group deltas for var int as (assuming var int group size of 4):
-        //  [0, 16, 32, 48], [1, 17, 33, 49] ... [15, 31, 47, 63]
         
         const int BLOCK_SIZE = 64;
-        //int distance = (BLOCK_SIZE/VARINT_GROUP_SIZE)*BLOCK_SIZE;
+        
         for( int j=0; j < VARINT_GROUP_SIZE; j++ ){
 
-            //uint64_t delta_addr = i+ j*distance;
+        
             uint64_t delta_addr = i+ j*64;
 
             MEE_DEBUG("delta_addr: 0x" << hex << delta_addr );
 
-            //number of large deltas should always be 1 - else overflow
-            if (minor_counters[delta_addr] < SMALL_DELTA_MAX){
-                small_deltas++;
-            } 
+            
+            if (minor_counters[delta_addr] >= SMALL_DELTA_MAX &&  
+                minor_counters[delta_addr] < LARGE_DELTA_MAX) {  
 
-            else if (minor_counters[delta_addr] < LARGE_DELTA_MAX){ 
                 MEE_DEBUG("Large DELTA: 0x" << hex << delta_addr << "\t" << dec << minor_counters[delta_addr]);
                 large_deltas++;
             }
-            else {
+
+            //if a number is greater the size of a large delta, we need to re-encrypt full block.
+            else if(minor_counters[delta_addr] >= SMALL_DELTA_MAX && 
+                    minor_counters[delta_addr] >= LARGE_DELTA_MAX) {
+
                 MEE_DEBUG("Overflow DELTA: 0x" << hex << delta_addr << "\t" << dec << minor_counters[delta_addr]);
 
                 varint_overflow = true; 
                 break;
+
             }
 
-            //we can only have 1 large delta
-            if(large_deltas > 1) {
-                varint_overflow = true;
-                break;
+            //we just looked at a pair - update pair count
+            if(j % 2 == 1){
+                if(large_deltas != 0) large_delta_pairs++;
+                large_deltas = 0;
+                MEE_DEBUG("next_pair");
             }
+            
 
+        }
+
+
+        //we can only have 1 large delta group
+        if(large_delta_pairs > 1 || varint_overflow == true) {
+            varint_overflow = true;
+            break;
         }
 
         MEE_DEBUG("=======");

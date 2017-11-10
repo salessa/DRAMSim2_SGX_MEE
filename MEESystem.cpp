@@ -164,6 +164,18 @@ MEESystem::MEESystem(MultiChannelMemorySystem *mem_sys_, ostream &dramsim_log_):
     config_log << "DELTA_BITS_TOTAL\t" << DELTA_BITS_TOTAL << "\n";
 #endif
 
+#ifdef SMALL_DELTA_MAX
+    config_log << "SMALL_DELTA_MAX\t" << SMALL_DELTA_MAX << "\n";
+#endif
+
+#ifdef LARGE_DELTA_MAX
+    config_log << "LARGE_DELTA_MAX\t" << LARGE_DELTA_MAX << "\n";
+#endif
+
+#ifdef VARINT_GROUP_SIZE
+    config_log << "VARINT_GROUP_SIZE\t" << VARINT_GROUP_SIZE << "\n";
+#endif
+
     dump_config(config_log.str());
 
 
