@@ -52,6 +52,7 @@ public:
     void update_increment_ctr(uint64_t data_addr);
     void update_smart_ctr(uint64_t data_addr);
     void update_compressed_ctr(uint64_t data_addr);
+    void update_varlength_group(uint64_t data_addr);
     
     
     

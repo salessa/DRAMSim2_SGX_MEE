@@ -293,7 +293,8 @@ void Decryptor::finish_crypto(){
         //update_patch(addr);
         update_increment_ctr(addr);
         update_smart_ctr(addr);
-        update_compressed_ctr(addr);
+        //update_compressed_ctr(addr);
+        update_varlength_group(addr);
         
 #endif
 
@@ -326,6 +327,19 @@ inline uint64_t align_block_to_ctr_sb(uint64_t addr){
     unsigned m = addr/CTR_SUPER_BLOCK_SIZE;
     return m*CTR_SUPER_BLOCK_SIZE;
 }
+
+inline uint64_t get_varint_flag_addr(uint64_t addr){
+
+    uint64_t addr_aligned = align_block_to_ctr_sb(addr);
+
+    unsigned group_number = (addr - addr_aligned)/64/VARINT_GROUP_SIZE;
+
+    return addr_aligned + VARINT_GROUP_SIZE*group_number*64;
+
+
+
+}
+
 
 void Decryptor::merge_counters(uint64_t data_addr){
     
@@ -557,6 +571,144 @@ void Decryptor::update_compressed_ctr(uint64_t data_addr){
             return;
     }
 
+
+
+
+}
+
+
+
+//implements all optimizations: delta + reset on identical + decrement + var length integers
+void Decryptor::update_varlength_group(uint64_t data_addr){
+
+    static unordered_map<uint64_t, uint64_t> minor_counters;
+    static unordered_map<uint64_t, bool> varint_large;
+
+    bool varint_overflow = false;
+
+
+    uint64_t addr_aligned = align_block_to_ctr_sb(data_addr);
+    
+
+
+
+
+
+    MEE_DEBUG("varing_update:\taddr: 0x" << hex << data_addr << "\t aligned: 0x" << addr_aligned << 
+                "\t varint_addr: 0x" << hex << get_varint_flag_addr(data_addr));
+
+
+
+
+    for(uint64_t i = addr_aligned; i < addr_aligned + CTR_SUPER_BLOCK_SIZE; i+=64){
+        if( minor_counters.count(i) == 0 ){
+            minor_counters[i] = 0;
+            varint_large [ get_varint_flag_addr(i) ] = false;
+        }
+    }
+
+    uint64_t new_ctr = minor_counters[data_addr] + 1;
+    minor_counters[data_addr] = new_ctr;
+    
+    //perform a merge if all minor counters are identical
+    bool is_identical = are_all_identical(minor_counters, addr_aligned, addr_aligned + CTR_SUPER_BLOCK_SIZE );
+
+    if(is_identical){
+
+        for(uint64_t i = addr_aligned; i < addr_aligned + CTR_SUPER_BLOCK_SIZE; i+=64){
+            minor_counters[i] = 0;
+        }
+
+        //we don't need to other re-adjustments if we are doing a merge
+        return;
+    }
+
+    //check if we have an overflow
+
+    uint64_t max_val = varint_large[ get_varint_flag_addr(data_addr) ] ? LARGE_DELTA_MAX :  SMALL_DELTA_MAX;
+    if(minor_counters[data_addr] < max_val ) return;
+
+    //handle overflow...
+
+    //compute min_ctr: we will use it for counter decrement later
+    uint64_t min_ctr = LARGE_DELTA_MAX;
+    for(uint64_t i = addr_aligned; i < addr_aligned + CTR_SUPER_BLOCK_SIZE; i+=64){
+        if( minor_counters[i] < min_ctr ){
+             min_ctr = minor_counters[i];
+        }
+    }
+
+
+    //overflow - decrement by a constant if all values are above zero.
+    if( min_ctr > 0 ){
+        //update stat
+        smart_ctr_decrements++;        
+        for(uint64_t i = addr_aligned; i < addr_aligned + CTR_SUPER_BLOCK_SIZE; i+=64){
+            minor_counters[i] -= min_ctr;  
+        }
+
+        //no need to do additional adjustments
+        return;
+    }
+
+    //if all fails, we will try updating var-int
+
+    //step 1: check if this is not already a large delta. 
+
+    if ( minor_counters[data_addr] >= LARGE_DELTA_MAX ) varint_overflow = true;
+
+    //Basic Var Int Group Idea:
+    //we group deltas into sub-groups (say 4 groups with 16 deltas each)
+    //one of these groups will have larger deltas, all the others will have smaller deltas
+    //a 2-bit flag indicates which of the 4 groups has the larger deltas, 
+    //a 1-bit flag tells us if var-int encoding is being used
+
+    //Storage:
+    //major counter is 56-bits, fixed length deltas would occupy a total of 7*64 = 448 bits
+    //all deltas will initially have a size of 6-bits (4KB in a block group) -> 6*64=384 bits
+    //we have a 2-bit index
+    //total used space: 384+2 = 386. 
+    //unused bits: 62--> we distribute this among the 16 larger deltas in a single group.
+    //  14 of 16 deltas in the sub group will get 4 extra bits (become 10 bit deltas)
+    // 2 of 16 will get 3 extra bits
+
+
+    //make sure there are no other large delta group. 
+    //if there are other large deltas, another counter cannot be made larger
+    for(uint64_t i = addr_aligned; 
+        i < addr_aligned + CTR_SUPER_BLOCK_SIZE && !varint_overflow; //skip if varint_overflow already set
+        i+=64){
+
+    
+        if(varint_large[ get_varint_flag_addr(i) ]){
+            varint_overflow = true;
+            break;
+        }
+        
+    }
+
+
+    //we simply set the flag to make this group larger
+    if(!varint_overflow){
+        varint_large[ get_varint_flag_addr(data_addr) ] = true;
+        return;
+    }
+
+    
+    //if we reach this point, there is a varint overflow: 
+    //data cannot be represented using varint encoding, re-encrypt
+    
+    MEE_DEBUG("re-enc-compressed");
+
+    compressed_counter_reenc_blocks += CTR_SUPER_BLOCK_SIZE/64 - 1;
+    compressed_counter_reenc++;
+    //reset
+    for(uint64_t i = addr_aligned; i < addr_aligned + CTR_SUPER_BLOCK_SIZE; i+=64){
+        minor_counters[i] = 0;  
+        varint_large[ get_varint_flag_addr(i) ] = false;
+    }
+
+            
 
 
 
