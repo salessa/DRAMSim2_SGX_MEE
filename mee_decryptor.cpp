@@ -623,9 +623,11 @@ void Decryptor::update_varlength_group(uint64_t data_addr){
         return;
     }
 
-    //check if we have an overflow
-
+    
+    //we first need to determine if this is a large delta or a small delta
     uint64_t max_val = varint_large[ get_varint_flag_addr(data_addr) ] ? LARGE_DELTA_MAX :  SMALL_DELTA_MAX;
+    
+    //if current update does not cause overflow, we can return.
     if(minor_counters[data_addr] < max_val ) return;
 
     //handle overflow...
@@ -639,10 +641,9 @@ void Decryptor::update_varlength_group(uint64_t data_addr){
     }
 
 
-    //overflow - decrement by a constant if all values are above zero.
+    //on overflow - we decrement by a constant if all values are above zero.
     if( min_ctr > 0 ){
-        //update stat
-        smart_ctr_decrements++;        
+        
         for(uint64_t i = addr_aligned; i < addr_aligned + CTR_SUPER_BLOCK_SIZE; i+=64){
             minor_counters[i] -= min_ctr;  
         }
@@ -651,7 +652,7 @@ void Decryptor::update_varlength_group(uint64_t data_addr){
         return;
     }
 
-    //if all fails, we will try updating var-int
+    //if all fails, we will try updating var-int configuration
 
     //step 1: check if this is not already a large delta. 
 
@@ -666,11 +667,11 @@ void Decryptor::update_varlength_group(uint64_t data_addr){
     //Storage:
     //major counter is 56-bits, fixed length deltas would occupy a total of 7*64 = 448 bits
     //all deltas will initially have a size of 6-bits (4KB in a block group) -> 6*64=384 bits
-    //we have a 2-bit index
-    //total used space: 384+2 = 386. 
-    //unused bits: 62--> we distribute this among the 16 larger deltas in a single group.
-    //  14 of 16 deltas in the sub group will get 4 extra bits (become 10 bit deltas)
-    // 2 of 16 will get 3 extra bits
+    //we have a 2-bit index, and 1-bit flag
+    //total used space: 56+384+2+1 = 443. 
+    //unused bits: 512 - 443 = 69 bits--> we distribute this among the 16 larger deltas in a single group.
+    // 69 bits/16 blocks = 4.3 -> 4 extra bits for large deltas
+    // 4*16 = 64, -> 5 wasted bits
 
 
     //make sure there are no other large delta group. 
