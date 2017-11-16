@@ -631,7 +631,7 @@ void Decryptor::update_varlength_group(uint64_t data_addr){
     if(minor_counters[data_addr] < max_val ) return;
 
     //handle overflow...
-
+#if DECREMENT_ENABLED
     //compute min_ctr: we will use it for counter decrement later
     uint64_t min_ctr = LARGE_DELTA_MAX;
     for(uint64_t i = addr_aligned; i < addr_aligned + CTR_SUPER_BLOCK_SIZE; i+=64){
@@ -651,7 +651,7 @@ void Decryptor::update_varlength_group(uint64_t data_addr){
         //no need to do additional adjustments
         return;
     }
-
+#endif
     //if all fails, we will try updating var-int configuration
 
     //step 1: check if this is not already a large delta. 
